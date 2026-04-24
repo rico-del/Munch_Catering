@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+env/
+
+# Sensitive Data
+.env
+
+# BeeWare / Toga
+build/
+dist/
+*.dist-info/
+
+# Editors
+.vscode/
+.idea/
