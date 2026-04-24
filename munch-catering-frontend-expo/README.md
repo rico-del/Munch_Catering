@@ -63,18 +63,18 @@ Useful shortcuts:
 - `npm run web`
 
 ## Backend Connection
-The frontend reads its backend base URL from `EXPO_PUBLIC_API_BASE_URL`.
+The frontend reads its backend base URL from `EXPO_PUBLIC_API_URL`. It also accepts the older `EXPO_PUBLIC_API_BASE_URL` name as a fallback.
 
 Typical local web setup:
 
 ```bash
-EXPO_PUBLIC_API_BASE_URL=http://localhost:8000
+EXPO_PUBLIC_API_URL=http://localhost:8000
 ```
 
 Typical Android emulator setup:
 
 ```bash
-EXPO_PUBLIC_API_BASE_URL=http://10.0.2.2:8000
+EXPO_PUBLIC_API_URL=http://10.0.2.2:8000
 ```
 
 If the variable is not set, the app falls back to local defaults in the API client.

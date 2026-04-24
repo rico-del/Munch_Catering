@@ -57,9 +57,17 @@ type BackendReview = {
   created_at: string;
 };
 
-const baseURL =
+const REMOTE_API_URL = 'https://munch-catering.onrender.com';
+const LOCAL_API_URL = Platform.OS === 'android' ? 'http://10.0.2.2:8000' : 'http://localhost:8000';
+
+const API_URL =
+  process.env.EXPO_PUBLIC_API_URL ||
   process.env.EXPO_PUBLIC_API_BASE_URL ||
-  (Platform.OS === 'android' ? 'http://10.0.2.2:8000' : 'http://localhost:8000');
+  (Platform.OS === 'web' && process.env.NODE_ENV === 'production' ? REMOTE_API_URL : LOCAL_API_URL);
+
+export default API_URL;
+
+const baseURL = API_URL;
 
 function resolveAssetUrl(url?: string) {
   if (!url) return '';

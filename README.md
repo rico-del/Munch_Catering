@@ -72,7 +72,7 @@ npx expo start
 
 ## Local Environment Notes
 - The backend uses a private `.env` file and includes `.env.example` for safe setup.
-- The frontend can point at the backend through `EXPO_PUBLIC_API_BASE_URL`.
+- The frontend can point at the backend through `EXPO_PUBLIC_API_URL`.
 - For safe local work, the backend payment provider can remain in `test` mode.
 - Real Daraja sandbox usage requires valid credentials and a public callback URL.
 
