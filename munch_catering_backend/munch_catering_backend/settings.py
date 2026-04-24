@@ -8,12 +8,14 @@ PROJECT_ROOT = PACKAGE_DIR.parent
 
 load_dotenv(PROJECT_ROOT / ".env")
 
+MONGO_URI = os.getenv("MONGO_URI")
+
 
 class Settings:
     def __init__(self) -> None:
         self.APP_ENV = os.getenv("APP_ENV", os.getenv("ENV", "development")).strip().lower()
         self.DEBUG = self._as_bool(os.getenv("DEBUG", "false"))
-        self.MONGO_URL = os.getenv("MONGO_URL") or os.getenv("MONGO_URI") or "mongodb://localhost:27017"
+        self.MONGO_URI = MONGO_URI or os.getenv("MONGO_URL") or "mongodb://localhost:27017"
         self.DB_NAME = os.getenv("DB_NAME", "munch_catering")
         self.PROJECT_ROOT = PROJECT_ROOT
         self.PORTFOLIO_DIR = PROJECT_ROOT / "portfolio_images"

@@ -9,3 +9,5 @@ python-dotenv==1.2.2
 python-jose==3.5.0
 pyjwt[crypto]==2.12.1
 python-multipart==0.0.20
+uvicorn==0.24.0
+

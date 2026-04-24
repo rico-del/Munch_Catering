@@ -2,7 +2,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from munch_catering_backend.settings import settings
 
 # Centralized database configuration using pydantic BaseSettings
-client = AsyncIOMotorClient(settings.MONGO_URL)
+client = AsyncIOMotorClient(settings.MONGO_URI)
 
 # Use the configured database name
 # This is the database that will appear in MongoDB Compass

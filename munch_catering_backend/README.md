@@ -27,7 +27,7 @@ Use `.env.example` as the starting point for your private `.env`.
 Minimum required values:
 
 ```env
-MONGO_URL=your_mongo_connection
+MONGO_URI=your_mongo_connection
 SECRET_KEY=your_jwt_secret
 ALGORITHM=HS256
 ```
@@ -86,5 +86,4 @@ Run the backend test suite with:
 ```bash
 python -m unittest discover -s tests -v
 ```
-
 
