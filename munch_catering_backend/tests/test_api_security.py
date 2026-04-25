@@ -103,6 +103,11 @@ class UpdateResult:
         self.modified_count = modified_count
 
 
+class DeleteResult:
+    def __init__(self, deleted_count=0):
+        self.deleted_count = deleted_count
+
+
 class FakeCursor:
     def __init__(self, documents):
         self.documents = list(documents)
@@ -178,6 +183,24 @@ class FakeCollection:
                 modified += 1
         return UpdateResult(matched_count=modified, modified_count=modified)
 
+    async def delete_one(self, query):
+        for index, document in enumerate(self.documents):
+            if match_query(document, query):
+                self.documents.pop(index)
+                return DeleteResult(deleted_count=1)
+        return DeleteResult()
+
+    async def delete_many(self, query):
+        kept = []
+        deleted = 0
+        for document in self.documents:
+            if match_query(document, query):
+                deleted += 1
+            else:
+                kept.append(document)
+        self.documents = kept
+        return DeleteResult(deleted_count=deleted)
+
     async def find_one_and_update(self, query, update, return_document=None):
         for document in self.documents:
             if match_query(document, query):
@@ -207,6 +230,9 @@ class FakeCollection:
             elif operator == "$pull":
                 for key, matcher in payload.items():
                     document[key] = [item for item in document.get(key, []) if not match_query(item, matcher)]
+            elif operator == "$unset":
+                for key in payload:
+                    document.pop(key, None)
 
 
 class FakeDB:
@@ -463,6 +489,50 @@ class ApiSecurityTests(unittest.TestCase):
         response = self.client.get("/user/me?email=other@munch.app", headers=self.auth_header("customer"))
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["email"], "guest@munch.app")
+
+    def test_disabled_account_cannot_continue_or_login(self):
+        disabled = self.client.patch("/user/me/disable", headers=self.auth_header("customer"))
+        self.assertEqual(disabled.status_code, 200)
+
+        profile = self.client.get("/user/me", headers=self.auth_header("customer"))
+        self.assertEqual(profile.status_code, 403)
+
+        with patch("munch_catering_backend.user_auth.verify_password", return_value=True):
+            login = self.client.post(
+                "/auth/login",
+                json={"email": "guest@munch.app", "password": "password123"},
+            )
+        self.assertEqual(login.status_code, 403)
+
+    def test_reactivate_requires_password_and_restores_account(self):
+        disabled = self.client.patch("/user/me/disable", headers=self.auth_header("customer"))
+        self.assertEqual(disabled.status_code, 200)
+
+        with patch("munch_catering_backend.user_auth.verify_password", return_value=False):
+            rejected = self.client.post(
+                "/auth/reactivate",
+                json={"email": "guest@munch.app", "password": "wrongpass123"},
+            )
+        self.assertEqual(rejected.status_code, 401)
+
+        with patch("munch_catering_backend.user_auth.verify_password", return_value=True):
+            restored = self.client.post(
+                "/auth/reactivate",
+                json={"email": "guest@munch.app", "password": "password123"},
+            )
+        self.assertEqual(restored.status_code, 200)
+        self.assertIn("token", restored.json())
+
+        profile = self.client.get("/user/me", headers=self.auth_header("customer"))
+        self.assertEqual(profile.status_code, 200)
+
+    def test_delete_account_removes_customer_owned_records(self):
+        response = self.client.delete("/user/me", headers=self.auth_header("customer"))
+        self.assertEqual(response.status_code, 200)
+
+        self.assertFalse(any(item["email"] == "guest@munch.app" for item in self.fake_db.users.documents))
+        self.assertFalse(any(item.get("customer_user_id") == str(self.fake_db.user_ids["customer"]) for item in self.fake_db.bookings.documents))
+        self.assertFalse(any(item.get("sender") == "guest@munch.app" or item.get("recipient") == "guest@munch.app" for item in self.fake_db.messages.documents))
 
     def test_booking_list_and_detail_are_user_scoped(self):
         listing = self.client.get("/bookings", headers=self.auth_header("customer"))

@@ -445,6 +445,32 @@ export default function Index() {
     }
   }, [handleApiError, loginDraft.email, loginDraft.password, setAuthenticatedSession]);
 
+  const handleReactivate = React.useCallback(async () => {
+    const email = loginDraft.email.trim();
+    const password = loginDraft.password;
+
+    if (!email.includes('@')) {
+      setError('Enter the email address for the disabled account.');
+      return;
+    }
+    if (password.length < 8) {
+      setError('Enter the account password to reactivate.');
+      return;
+    }
+
+    setBusy(true);
+    setError(null);
+    try {
+      const nextSession = await api.reactivate(email, password);
+      await setAuthenticatedSession(nextSession);
+      Alert.alert('Account reactivated', 'Welcome back. Your account is active again.');
+    } catch (err) {
+      await handleApiError(err);
+    } finally {
+      setBusy(false);
+    }
+  }, [handleApiError, loginDraft.email, loginDraft.password, setAuthenticatedSession]);
+
   const handleSignup = React.useCallback(async () => {
     const fullName = signupDraft.fullName.trim();
     const username = signupDraft.username.trim();
@@ -684,6 +710,66 @@ export default function Index() {
       setBusy(false);
     }
   }, [catererDraft, handleApiError, refreshAll, session]);
+
+  const disableAccount = React.useCallback(() => {
+    if (!session) return;
+    Alert.alert(
+      'Disable account?',
+      'Your account will be signed out and blocked from use. Caterer profiles are removed from discovery while disabled.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Disable',
+          style: 'destructive',
+          onPress: () => {
+            void (async () => {
+              setBusy(true);
+              setError(null);
+              try {
+                await api.disableMyAccount(session.token);
+                await signOut();
+                Alert.alert('Account disabled', 'Your account has been disabled.');
+              } catch (err) {
+                await handleApiError(err);
+              } finally {
+                setBusy(false);
+              }
+            })();
+          },
+        },
+      ],
+    );
+  }, [handleApiError, session, signOut]);
+
+  const deleteAccount = React.useCallback(() => {
+    if (!session) return;
+    Alert.alert(
+      'Permanently delete account?',
+      'This removes your account and related account data. This action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete forever',
+          style: 'destructive',
+          onPress: () => {
+            void (async () => {
+              setBusy(true);
+              setError(null);
+              try {
+                await api.deleteMyAccount(session.token);
+                await signOut();
+                Alert.alert('Account deleted', 'Your account has been permanently deleted.');
+              } catch (err) {
+                await handleApiError(err);
+              } finally {
+                setBusy(false);
+              }
+            })();
+          },
+        },
+      ],
+    );
+  }, [handleApiError, session, signOut]);
 
   const addCatererTier = React.useCallback(() => {
     setCatererDraft(current => {
@@ -994,6 +1080,7 @@ export default function Index() {
             onChangeLogin={patch => setLoginDraft(current => ({ ...current, ...patch }))}
             onChangeSignup={patch => setSignupDraft(current => ({ ...current, ...patch }))}
             onLogin={handleLogin}
+            onReactivate={handleReactivate}
             onSignup={handleSignup}
           />
         ) : route.name === 'caterer-detail' && resolvedCaterer ? (
@@ -1241,6 +1328,16 @@ export default function Index() {
                 <SettingStat label="Session" value="Authenticated" subtle />
               </View>
               <GhostButton label="Sign out" onPress={() => void signOut()} />
+            </MotionCard>
+            <MotionCard>
+              <Text style={[styles.cardTitle, { color: theme.text }]}>Account closure</Text>
+              <Text style={[styles.bodyText, { color: theme.textMuted }]}>
+                Disable access temporarily, or permanently remove your account and related workspace data.
+              </Text>
+              <ButtonRow>
+                <SecondaryButton label="Disable account" onPress={disableAccount} />
+                <GhostButton label="Delete forever" onPress={deleteAccount} />
+              </ButtonRow>
             </MotionCard>
           </Screen>
         ) : session?.user.role === 'caterer' ? (
@@ -1596,6 +1693,7 @@ function AuthFlow(props: {
   onChangeLogin: (patch: Partial<LoginDraft>) => void;
   onChangeSignup: (patch: Partial<SignupDraft>) => void;
   onLogin: () => void;
+  onReactivate: () => void;
   onSignup: () => void;
 }) {
   return (
@@ -1641,6 +1739,7 @@ function AuthFlow(props: {
             autoCapitalize="none"
           />
           <PrimaryButton label={props.busy ? 'Signing in...' : 'Sign in'} onPress={props.onLogin} />
+          <SecondaryButton label="Reactivate disabled account" onPress={props.onReactivate} />
           <GhostButton label="Need an account? Create one" onPress={() => props.onNavigate('signup')} />
         </>
       ) : null}

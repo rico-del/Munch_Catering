@@ -88,6 +88,7 @@ async def update_caterer_profile(
         "price_from": computed_price_from,
         "hero_tagline": payload.hero_tagline,
         "cuisines": payload.cuisines,
+        "is_active": True,
         "created_at": existing_created_at,
         "updated_at": now,
     }
@@ -97,3 +98,52 @@ async def update_caterer_profile(
     if not saved:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to persist caterer profile")
     return serialize_caterer(saved)
+
+
+@router.patch("/me/disable")
+async def disable_current_account(principal: Principal = Depends(get_current_principal)):
+    db = get_db()
+    now = utc_now()
+    result = await db.users.update_one(
+        {"email": principal.email},
+        {"$set": {"is_disabled": True, "disabled_at": now, "updated_at": now}},
+    )
+    if result.matched_count != 1:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    if principal.role == "caterer":
+        await db.caterers.update_one(
+            {"owner_id": principal.user_id},
+            {"$set": {"is_active": False, "disabled_at": now, "updated_at": now}},
+        )
+
+    return {"message": "Account disabled"}
+
+
+@router.delete("/me")
+async def delete_current_account(principal: Principal = Depends(get_current_principal)):
+    db = get_db()
+    user_id = principal.user_id
+    email = principal.email
+    booking_query = {}
+
+    if principal.role == "caterer":
+        booking_query = {"caterer_owner_id": user_id}
+        await db.caterers.delete_many({"owner_id": user_id})
+        await db.quotes.delete_many({"caterer_owner_id": user_id})
+    elif principal.role == "customer":
+        booking_query = {"customer_user_id": user_id}
+        await db.quotes.delete_many({"customer_user_id": user_id})
+
+    bookings = await db.bookings.find(booking_query).to_list(None) if booking_query else []
+    booking_ids = [str(booking["_id"]) for booking in bookings]
+    if booking_query:
+        await db.bookings.delete_many(booking_query)
+
+    await db.messages.delete_many({"$or": [{"sender": email}, {"recipient": email}]})
+    await db.payments.delete_many({"$or": [{"customer_user_id": user_id}, {"booking_id": {"$in": booking_ids}}]})
+    result = await db.users.delete_one({"email": email})
+    if result.deleted_count != 1:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    return {"message": "Account permanently deleted"}

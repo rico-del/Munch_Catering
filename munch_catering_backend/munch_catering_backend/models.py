@@ -26,6 +26,11 @@ class UserLogin(BaseModel):
     password: str = Field(min_length=8, max_length=128)
 
 
+class UserReactivate(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=8, max_length=128)
+
+
 class UserProfile(BaseModel):
     id: str
     full_name: str

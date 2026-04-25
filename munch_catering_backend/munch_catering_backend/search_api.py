@@ -71,7 +71,9 @@ async def get_all_caterers(
 ):
     db = get_db()
     limit, offset = clamp_pagination(limit, offset)
-    query = {"tiers.name": tier} if tier else {}
+    query = {"is_active": {"$ne": False}}
+    if tier:
+        query["tiers.name"] = tier
     total = await db.caterers.count_documents(query)
     documents = await db.caterers.find(query).sort("rating", -1).skip(offset).limit(limit).to_list(limit)
     items = [serialize_caterer_summary(document) for document in documents]
@@ -82,6 +84,6 @@ async def get_all_caterers(
 async def get_caterer_detail(caterer_id: str):
     db = get_db()
     caterer = await db.caterers.find_one({"_id": parse_object_id(caterer_id, "Invalid caterer id")})
-    if not caterer:
+    if not caterer or caterer.get("is_active") is False:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Caterer not found")
     return serialize_caterer_profile(caterer)

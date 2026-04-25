@@ -277,6 +277,13 @@ export const api = {
     });
     return mapSession(payload);
   },
+  async reactivate(email: string, password: string) {
+    const payload = await request<BackendSession>('/auth/reactivate', {
+      method: 'POST',
+      body: { email, password },
+    });
+    return mapSession(payload);
+  },
   async register(input: { fullName: string; username: string; email: string; password: string; role: 'customer' | 'caterer' }) {
     const payload = await request<BackendSession>('/auth/register', {
       method: 'POST',
@@ -318,6 +325,18 @@ export const api = {
       role: payload.role,
       createdAt: payload.created_at,
     } as UserProfile;
+  },
+  async disableMyAccount(token: string) {
+    return request<{ message: string }>('/user/me/disable', {
+      method: 'PATCH',
+      token,
+    });
+  },
+  async deleteMyAccount(token: string) {
+    return request<{ message: string }>('/user/me', {
+      method: 'DELETE',
+      token,
+    });
   },
   async getCaterers() {
     const payload = await request<any>('/search/caterers');

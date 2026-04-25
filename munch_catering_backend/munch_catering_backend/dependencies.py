@@ -37,6 +37,8 @@ async def get_current_principal(
     user = await db.users.find_one(lookup)
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authenticated user not found")
+    if user.get("is_disabled"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This account has been disabled")
 
     return Principal(
         user_id=str(user.get("_id")),
