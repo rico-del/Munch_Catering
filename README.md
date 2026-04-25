@@ -4,6 +4,16 @@ Munch App is a two-part catering marketplace project built around a FastAPI back
 
 This repository is organized as a simple monorepo with one folder for the backend and one for the frontend.
 
+## Live Deployment
+
+The web app is live at:
+
+```text
+https://munchcatering.netlify.app/
+```
+
+The production web build is hosted on Netlify and points at the deployed FastAPI backend through `EXPO_PUBLIC_API_URL`.
+
 ## Project Structure
 - `munch_catering_backend` contains the FastAPI API, business logic, tests, and payment integration layer
 - `munch-catering-frontend-expo` contains the Expo app for customer and caterer workflows

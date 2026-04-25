@@ -1,11 +1,29 @@
+import hashlib
+import secrets
+from datetime import timedelta
+
 from fastapi import APIRouter, HTTPException, status
 
 from munch_catering_backend.auth_utils import create_token, hash_password, verify_password
 from munch_catering_backend.database import get_db
-from munch_catering_backend.models import AuthResponse, UserLogin, UserProfile, UserReactivate, UserRegister
+from munch_catering_backend.email_utils import send_password_reset_email
+from munch_catering_backend.models import (
+    AuthResponse,
+    PasswordResetConfirm,
+    PasswordResetRequest,
+    UserLogin,
+    UserProfile,
+    UserReactivate,
+    UserRegister,
+)
+from munch_catering_backend.settings import settings
 from munch_catering_backend.time_utils import utc_now
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
+
+
+def hash_reset_token(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
 def build_user_profile(document: dict) -> UserProfile:
@@ -50,6 +68,70 @@ async def login(user: UserLogin):
 
     token = create_token({"sub": normalized_email, "uid": str(db_user["_id"]), "role": db_user.get("role", "customer")})
     return AuthResponse(token=token, user=build_user_profile(db_user))
+
+
+@router.post("/password-reset/request")
+async def request_password_reset(payload: PasswordResetRequest):
+    db = get_db()
+    normalized_email = payload.email.lower()
+    db_user = await db.users.find_one({"email": normalized_email})
+    if not db_user:
+        return {"message": "If an account exists, a password reset email has been sent."}
+
+    reset_token = secrets.token_urlsafe(32)
+    now = utc_now()
+    await db.users.update_one(
+        {"email": normalized_email},
+        {
+            "$set": {
+                "password_reset_token_hash": hash_reset_token(reset_token),
+                "password_reset_expires_at": now + timedelta(minutes=settings.PASSWORD_RESET_TOKEN_MINUTES),
+                "password_reset_requested_at": now,
+                "updated_at": now,
+            }
+        },
+    )
+
+    try:
+        await send_password_reset_email(normalized_email, reset_token)
+    except Exception as exc:
+        await db.users.update_one(
+            {"email": normalized_email},
+            {"$unset": {"password_reset_token_hash": "", "password_reset_expires_at": "", "password_reset_requested_at": ""}},
+        )
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Password reset email is not available") from exc
+
+    return {"message": "If an account exists, a password reset email has been sent."}
+
+
+@router.post("/password-reset/confirm")
+async def confirm_password_reset(payload: PasswordResetConfirm):
+    db = get_db()
+    normalized_email = payload.email.lower()
+    db_user = await db.users.find_one({"email": normalized_email})
+    if not db_user:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired reset token")
+
+    token_hash = db_user.get("password_reset_token_hash")
+    expires_at = db_user.get("password_reset_expires_at")
+    if not token_hash or not secrets.compare_digest(token_hash, hash_reset_token(payload.token)):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired reset token")
+    if not expires_at or expires_at < utc_now():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired reset token")
+
+    now = utc_now()
+    await db.users.update_one(
+        {"email": normalized_email},
+        {
+            "$set": {"password": hash_password(payload.new_password), "password_reset_at": now, "updated_at": now},
+            "$unset": {
+                "password_reset_token_hash": "",
+                "password_reset_expires_at": "",
+                "password_reset_requested_at": "",
+            },
+        },
+    )
+    return {"message": "Password has been reset"}
 
 
 @router.post("/reactivate", response_model=AuthResponse)

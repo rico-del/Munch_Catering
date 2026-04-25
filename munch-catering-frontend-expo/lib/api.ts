@@ -284,6 +284,22 @@ export const api = {
     });
     return mapSession(payload);
   },
+  async requestPasswordReset(email: string) {
+    return request<{ message: string }>('/auth/password-reset/request', {
+      method: 'POST',
+      body: { email },
+    });
+  },
+  async confirmPasswordReset(input: { email: string; token: string; newPassword: string }) {
+    return request<{ message: string }>('/auth/password-reset/confirm', {
+      method: 'POST',
+      body: {
+        email: input.email,
+        token: input.token,
+        new_password: input.newPassword,
+      },
+    });
+  },
   async register(input: { fullName: string; username: string; email: string; password: string; role: 'customer' | 'caterer' }) {
     const payload = await request<BackendSession>('/auth/register', {
       method: 'POST',

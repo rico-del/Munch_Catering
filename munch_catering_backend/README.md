@@ -32,6 +32,15 @@ SECRET_KEY=your_jwt_secret
 ALGORITHM=HS256
 ```
 
+Optional password reset email configuration:
+
+```env
+RESEND_API_KEY=your_resend_api_key
+EMAIL_FROM=Munch <noreply@your-domain.example>
+PASSWORD_RESET_BASE_URL=https://munchcatering.netlify.app
+PASSWORD_RESET_TOKEN_MINUTES=30
+```
+
 Optional payment configuration:
 
 ```env
@@ -86,4 +95,3 @@ Run the backend test suite with:
 ```bash
 python -m unittest discover -s tests -v
 ```
-

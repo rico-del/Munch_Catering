@@ -6,6 +6,7 @@ import {
   Easing,
   Image,
   ImageBackground,
+  Platform,
   Pressable,
   RefreshControl,
   SafeAreaView,
@@ -42,7 +43,7 @@ import {
   spacing,
 } from '@/lib/munch-data';
 
-type AuthScreen = 'welcome' | 'login' | 'signup';
+type AuthScreen = 'welcome' | 'login' | 'signup' | 'forgot-password' | 'reset-password';
 type CustomerTab = 'home' | 'discover' | 'messages' | 'bookings' | 'profile';
 type VendorTab = 'dashboard' | 'inquiries' | 'messages' | 'bookings' | 'portfolio' | 'profile';
 type AppRoute =
@@ -68,6 +69,12 @@ type SignupDraft = {
 type LoginDraft = {
   email: string;
   password: string;
+};
+
+type PasswordResetDraft = {
+  email: string;
+  token: string;
+  newPassword: string;
 };
 
 type UploadDraft = {
@@ -241,6 +248,18 @@ function resolvePrimaryPortfolioItem<T extends { isPrimary?: boolean }>(items: T
   return items.find(item => item.isPrimary) || items[0] || null;
 }
 
+function getInitialPasswordResetParams(): Partial<PasswordResetDraft> | null {
+  if (Platform.OS !== 'web' || typeof window === 'undefined') return null;
+  const params = new URLSearchParams(window.location.search);
+  const token = params.get('resetToken') || params.get('token') || '';
+  if (!token) return null;
+  return {
+    email: params.get('email') || '',
+    token,
+    newPassword: '',
+  };
+}
+
 export default function Index() {
   const [booting, setBooting] = React.useState(true);
   const [refreshing, setRefreshing] = React.useState(false);
@@ -263,6 +282,7 @@ export default function Index() {
   const [uploadDrafts, setUploadDrafts] = React.useState<UploadDraft[]>([]);
   const [search, setSearch] = React.useState('');
   const [loginDraft, setLoginDraft] = React.useState<LoginDraft>({ email: '', password: '' });
+  const [passwordResetDraft, setPasswordResetDraft] = React.useState<PasswordResetDraft>({ email: '', token: '', newPassword: '' });
   const [signupDraft, setSignupDraft] = React.useState<SignupDraft>(emptySignupDraft);
   const [profileDraft, setProfileDraft] = React.useState({ fullName: '', username: '' });
   const [catererDraft, setCatererDraft] = React.useState<CatererProfileDraft>(defaultCatererDraft);
@@ -278,6 +298,14 @@ export default function Index() {
         const storedTheme = await loadThemePreference();
         if (mounted) {
           setThemeMode(storedTheme);
+        }
+        const resetParams = getInitialPasswordResetParams();
+        if (resetParams) {
+          if (mounted) {
+            setPasswordResetDraft(current => ({ ...current, ...resetParams }));
+            setRoute({ name: 'auth', screen: 'reset-password' });
+          }
+          return;
         }
         const stored = await loadSession();
         if (!stored) {
@@ -429,8 +457,11 @@ export default function Index() {
     if (screen === 'login') {
       setLoginDraft({ email: '', password: '' });
     }
+    if (screen === 'forgot-password') {
+      setPasswordResetDraft(current => ({ ...current, email: loginDraft.email.trim(), token: '', newPassword: '' }));
+    }
     setRoute({ name: 'auth', screen });
-  }, []);
+  }, [loginDraft.email]);
 
   const handleLogin = React.useCallback(async () => {
     setBusy(true);
@@ -470,6 +501,60 @@ export default function Index() {
       setBusy(false);
     }
   }, [handleApiError, loginDraft.email, loginDraft.password, setAuthenticatedSession]);
+
+  const handleRequestPasswordReset = React.useCallback(async () => {
+    const email = passwordResetDraft.email.trim();
+    if (!email.includes('@')) {
+      setError('Enter the email address for your account.');
+      return;
+    }
+
+    setBusy(true);
+    setError(null);
+    try {
+      await api.requestPasswordReset(email);
+      setPasswordResetDraft(current => ({ ...current, email }));
+      setRoute({ name: 'auth', screen: 'reset-password' });
+      Alert.alert('Check your email', 'If an account exists, a password reset link has been sent.');
+    } catch (err) {
+      await handleApiError(err);
+    } finally {
+      setBusy(false);
+    }
+  }, [handleApiError, passwordResetDraft.email]);
+
+  const handleConfirmPasswordReset = React.useCallback(async () => {
+    const email = passwordResetDraft.email.trim();
+    const token = passwordResetDraft.token.trim();
+    const newPassword = passwordResetDraft.newPassword;
+
+    if (!email.includes('@')) {
+      setError('Enter the email address for your account.');
+      return;
+    }
+    if (token.length < 16) {
+      setError('Paste the reset token from your email.');
+      return;
+    }
+    if (newPassword.length < 8) {
+      setError('New password must be at least 8 characters.');
+      return;
+    }
+
+    setBusy(true);
+    setError(null);
+    try {
+      await api.confirmPasswordReset({ email, token, newPassword });
+      setLoginDraft({ email, password: '' });
+      setPasswordResetDraft({ email: '', token: '', newPassword: '' });
+      setRoute({ name: 'auth', screen: 'login' });
+      Alert.alert('Password reset', 'You can now sign in with your new password.');
+    } catch (err) {
+      await handleApiError(err);
+    } finally {
+      setBusy(false);
+    }
+  }, [handleApiError, passwordResetDraft]);
 
   const handleSignup = React.useCallback(async () => {
     const fullName = signupDraft.fullName.trim();
@@ -1074,13 +1159,17 @@ export default function Index() {
           <AuthFlow
             screen={route.screen}
             loginDraft={loginDraft}
+            passwordResetDraft={passwordResetDraft}
             signupDraft={signupDraft}
             busy={busy}
             onNavigate={navigateAuth}
             onChangeLogin={patch => setLoginDraft(current => ({ ...current, ...patch }))}
+            onChangePasswordReset={patch => setPasswordResetDraft(current => ({ ...current, ...patch }))}
             onChangeSignup={patch => setSignupDraft(current => ({ ...current, ...patch }))}
             onLogin={handleLogin}
             onReactivate={handleReactivate}
+            onRequestPasswordReset={handleRequestPasswordReset}
+            onConfirmPasswordReset={handleConfirmPasswordReset}
             onSignup={handleSignup}
           />
         ) : route.name === 'caterer-detail' && resolvedCaterer ? (
@@ -1242,7 +1331,11 @@ export default function Index() {
             </MotionCard>
             <MotionCard>
               <Text style={[styles.cardTitle, { color: theme.text }]}>Appearance</Text>
-              <Text style={[styles.bodyText, { color: theme.textMuted }]}>Choose how the app should look across customer and caterer experiences.</Text>
+              <Text style={[styles.bodyText, { color: theme.textMuted }]}>
+                {currentUser?.role === 'caterer'
+                  ? 'Choose how your caterer workspace should look while managing inquiries, bookings, and your studio profile.'
+                  : 'Choose how your customer workspace should look while browsing caterers, bookings, and messages.'}
+              </Text>
               <ThemeToggleBar
                 value={themeMode}
                 onChange={mode => {
@@ -1687,13 +1780,17 @@ function BootScreen() {
 function AuthFlow(props: {
   screen: AuthScreen;
   loginDraft: LoginDraft;
+  passwordResetDraft: PasswordResetDraft;
   signupDraft: SignupDraft;
   busy: boolean;
   onNavigate: (screen: AuthScreen) => void;
   onChangeLogin: (patch: Partial<LoginDraft>) => void;
+  onChangePasswordReset: (patch: Partial<PasswordResetDraft>) => void;
   onChangeSignup: (patch: Partial<SignupDraft>) => void;
   onLogin: () => void;
   onReactivate: () => void;
+  onRequestPasswordReset: () => void;
+  onConfirmPasswordReset: () => void;
   onSignup: () => void;
 }) {
   return (
@@ -1740,7 +1837,55 @@ function AuthFlow(props: {
           />
           <PrimaryButton label={props.busy ? 'Signing in...' : 'Sign in'} onPress={props.onLogin} />
           <SecondaryButton label="Reactivate disabled account" onPress={props.onReactivate} />
+          <GhostButton label="Forgot password?" onPress={() => props.onNavigate('forgot-password')} />
           <GhostButton label="Need an account? Create one" onPress={() => props.onNavigate('signup')} />
+        </>
+      ) : null}
+
+      {props.screen === 'forgot-password' ? (
+        <>
+          <SectionHeader eyebrow="Password reset" title="Send a secure reset link to your account email." />
+          <Field
+            label="Email address"
+            value={props.passwordResetDraft.email}
+            onChangeText={value => props.onChangePasswordReset({ email: value })}
+            autoComplete="email"
+            keyboardType="email-address"
+            autoCapitalize="none"
+          />
+          <PrimaryButton label={props.busy ? 'Sending reset link...' : 'Send reset link'} onPress={props.onRequestPasswordReset} />
+          <GhostButton label="Back to sign in" onPress={() => props.onNavigate('login')} />
+        </>
+      ) : null}
+
+      {props.screen === 'reset-password' ? (
+        <>
+          <SectionHeader eyebrow="Set new password" title="Paste the reset token from your email and choose a new password." />
+          <Field
+            label="Email address"
+            value={props.passwordResetDraft.email}
+            onChangeText={value => props.onChangePasswordReset({ email: value })}
+            autoComplete="email"
+            keyboardType="email-address"
+            autoCapitalize="none"
+          />
+          <Field
+            label="Reset token"
+            value={props.passwordResetDraft.token}
+            onChangeText={value => props.onChangePasswordReset({ token: value })}
+            autoComplete="off"
+            autoCapitalize="none"
+          />
+          <Field
+            label="New password"
+            value={props.passwordResetDraft.newPassword}
+            onChangeText={value => props.onChangePasswordReset({ newPassword: value })}
+            secureTextEntry
+            autoComplete="new-password"
+            autoCapitalize="none"
+          />
+          <PrimaryButton label={props.busy ? 'Resetting password...' : 'Reset password'} onPress={props.onConfirmPasswordReset} />
+          <GhostButton label="Back to sign in" onPress={() => props.onNavigate('login')} />
         </>
       ) : null}
 

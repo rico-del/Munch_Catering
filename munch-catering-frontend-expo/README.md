@@ -4,6 +4,16 @@ This is the Expo frontend for the Munch catering marketplace. It provides the cu
 
 The app is designed as a single mobile-first experience with role-aware flows. It connects to the FastAPI backend in the sibling `munch_catering_backend` folder.
 
+## Live Web App
+
+The deployed web app is available at:
+
+```text
+https://munchcatering.netlify.app/
+```
+
+Netlify builds the Expo web app and uses `EXPO_PUBLIC_API_URL` to connect to the deployed backend.
+
 ## What The App Includes
 - login and signup flows with persisted sessions
 - separate customer and caterer experiences in one app shell
@@ -69,6 +79,12 @@ Typical local web setup:
 
 ```bash
 EXPO_PUBLIC_API_URL=http://localhost:8000
+```
+
+Typical production web setup:
+
+```bash
+EXPO_PUBLIC_API_URL=https://munch-catering.onrender.com
 ```
 
 Typical Android emulator setup:

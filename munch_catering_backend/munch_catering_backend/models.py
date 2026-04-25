@@ -31,6 +31,16 @@ class UserReactivate(BaseModel):
     password: str = Field(min_length=8, max_length=128)
 
 
+class PasswordResetRequest(BaseModel):
+    email: EmailStr
+
+
+class PasswordResetConfirm(BaseModel):
+    email: EmailStr
+    token: str = Field(min_length=16, max_length=256)
+    new_password: str = Field(min_length=8, max_length=128)
+
+
 class UserProfile(BaseModel):
     id: str
     full_name: str

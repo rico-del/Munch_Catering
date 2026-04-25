@@ -3,7 +3,7 @@ import os
 import unittest
 from contextlib import ExitStack
 from copy import deepcopy
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from bson import ObjectId
 from fastapi.testclient import TestClient
@@ -525,6 +525,32 @@ class ApiSecurityTests(unittest.TestCase):
 
         profile = self.client.get("/user/me", headers=self.auth_header("customer"))
         self.assertEqual(profile.status_code, 200)
+
+    def test_password_reset_requires_emailed_token_and_updates_password(self):
+        reset_token = "fixed-reset-token-for-tests"
+        with patch("munch_catering_backend.user_auth.secrets.token_urlsafe", return_value=reset_token):
+            with patch("munch_catering_backend.user_auth.send_password_reset_email", new_callable=AsyncMock) as send_email:
+                request = self.client.post("/auth/password-reset/request", json={"email": "guest@munch.app"})
+
+        self.assertEqual(request.status_code, 200)
+        send_email.assert_called_once_with("guest@munch.app", reset_token)
+
+        bad_token = self.client.post(
+            "/auth/password-reset/confirm",
+            json={"email": "guest@munch.app", "token": "wrong-reset-token-for-tests", "new_password": "newpass123"},
+        )
+        self.assertEqual(bad_token.status_code, 400)
+
+        with patch("munch_catering_backend.user_auth.hash_password", return_value="new-hash"):
+            confirmed = self.client.post(
+                "/auth/password-reset/confirm",
+                json={"email": "guest@munch.app", "token": reset_token, "new_password": "newpass123"},
+            )
+        self.assertEqual(confirmed.status_code, 200)
+
+        user = next(item for item in self.fake_db.users.documents if item["email"] == "guest@munch.app")
+        self.assertEqual(user["password"], "new-hash")
+        self.assertNotIn("password_reset_token_hash", user)
 
     def test_delete_account_removes_customer_owned_records(self):
         response = self.client.delete("/user/me", headers=self.auth_header("customer"))

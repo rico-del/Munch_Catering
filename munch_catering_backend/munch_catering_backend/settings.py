@@ -28,6 +28,10 @@ class Settings:
         self.SECRET_KEY = os.getenv("SECRET_KEY", "")
         self.ALGORITHM = os.getenv("ALGORITHM", "HS256")
         self.ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
+        self.PASSWORD_RESET_TOKEN_MINUTES = int(os.getenv("PASSWORD_RESET_TOKEN_MINUTES", "30"))
+        self.PASSWORD_RESET_BASE_URL = os.getenv("PASSWORD_RESET_BASE_URL", "http://localhost:8081").rstrip("/")
+        self.EMAIL_FROM = os.getenv("EMAIL_FROM", "Munch <noreply@munch.local>")
+        self.RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
         self.ENABLE_ADMIN_ROUTES = self._as_bool(
             os.getenv("ENABLE_ADMIN_ROUTES", "true" if self.is_development else "false")
         )
