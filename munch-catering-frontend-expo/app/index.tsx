@@ -1,28 +1,39 @@
 import React from 'react';
 import {
-  ActivityIndicator,
   Alert,
   Animated,
-  Easing,
   Image,
-  ImageBackground,
   Platform,
   Pressable,
-  RefreshControl,
   SafeAreaView,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { BlurView } from 'expo-blur';
 import * as ImagePicker from 'expo-image-picker';
-import { LinearGradient } from 'expo-linear-gradient';
 
+import { ButtonRow, GhostButton, PrimaryButton, SecondaryButton } from '@/components/munch/buttons';
+import { Field } from '@/components/munch/field';
+import { Avatar, BusyStripe, InlineError, StatusPill } from '@/components/munch/feedback';
+import { Header, HeroCard, MotionCard, MunchBrandLockup, Screen, SectionHeader, SettingStat } from '@/components/munch/shell';
+import { TabBar } from '@/components/munch/tab-bar';
+import { ThemeToggleBar } from '@/components/munch/theme-toggle-bar';
+import { AuthFlow } from '@/features/auth/auth-flow';
+import { AuthScreen, LoginDraft, PasswordResetDraft, SignupDraft } from '@/features/auth/types';
 import { api } from '@/lib/api';
+import {
+  getBookingStatusTone,
+  getTierPreviewItems,
+  resolvePrimaryPortfolioItem,
+  toCumulativeTiers,
+  toIncrementalTiers,
+  toSentenceCase,
+  uniqueItems,
+} from '@/lib/munch-helpers';
 import { clearSession, loadSession, loadThemePreference, saveSession, saveThemePreference } from '@/lib/session';
+import { ThemeContext, darkTheme, lightTheme, useThemeTokens } from '@/lib/theme-context';
 import {
   Booking,
   CatererCardData,
@@ -34,8 +45,8 @@ import {
   PortfolioItem,
   Quote,
   Session,
-  ThemeMode,
   VendorStats,
+  ThemeMode,
   formatCurrency,
   formatShortDate,
   palette,
@@ -43,7 +54,6 @@ import {
   spacing,
 } from '@/lib/munch-data';
 
-type AuthScreen = 'welcome' | 'login' | 'signup' | 'forgot-password' | 'reset-password';
 type CustomerTab = 'home' | 'discover' | 'messages' | 'bookings' | 'profile';
 type VendorTab = 'dashboard' | 'inquiries' | 'messages' | 'bookings' | 'portfolio' | 'profile';
 type AppRoute =
@@ -58,25 +68,6 @@ type AppRoute =
   | { name: 'chat'; contactEmail: string; contactName: string }
   | { name: 'settings' };
 
-type SignupDraft = {
-  fullName: string;
-  username: string;
-  email: string;
-  password: string;
-  role: 'customer' | 'caterer';
-};
-
-type LoginDraft = {
-  email: string;
-  password: string;
-};
-
-type PasswordResetDraft = {
-  email: string;
-  token: string;
-  newPassword: string;
-};
-
 type UploadDraft = {
   id: string;
   uri: string;
@@ -87,69 +78,6 @@ type UploadDraft = {
   description: string;
   isPrimary: boolean;
 };
-
-type ThemeTokens = {
-  mode: ThemeMode;
-  page: string;
-  surface: string;
-  surfaceMuted: string;
-  surfaceElevated: string;
-  text: string;
-  textMuted: string;
-  border: string;
-  headerBadge: string;
-  shell: string;
-  shellBorder: string;
-  field: string;
-  fieldBorder: string;
-  ghost: string;
-  overlay: string;
-  inverseText: string;
-};
-
-const lightTheme: ThemeTokens = {
-  mode: 'light',
-  page: palette.cloud100,
-  surface: palette.white,
-  surfaceMuted: '#FFF8F2',
-  surfaceElevated: '#F6EBDD',
-  text: palette.ink950,
-  textMuted: palette.slate700,
-  border: palette.border,
-  headerBadge: '#F7E2D4',
-  shell: 'rgba(255, 248, 242, 0.9)',
-  shellBorder: 'rgba(230, 212, 193, 0.88)',
-  field: '#FFF9F3',
-  fieldBorder: 'rgba(201, 109, 67, 0.14)',
-  ghost: 'rgba(255, 252, 248, 0.55)',
-  overlay: 'rgba(24, 32, 25, 0.56)',
-  inverseText: '#FFF8F2',
-};
-
-const darkTheme: ThemeTokens = {
-  mode: 'dark',
-  page: '#111613',
-  surface: '#1A221B',
-  surfaceMuted: '#202821',
-  surfaceElevated: '#242E26',
-  text: '#F5EEE5',
-  textMuted: '#C3B7A9',
-  border: '#344134',
-  headerBadge: '#2B352B',
-  shell: 'rgba(24, 32, 25, 0.92)',
-  shellBorder: 'rgba(52, 65, 52, 0.96)',
-  field: '#202821',
-  fieldBorder: 'rgba(201, 109, 67, 0.28)',
-  ghost: 'rgba(36, 46, 38, 0.8)',
-  overlay: 'rgba(14, 18, 15, 0.66)',
-  inverseText: '#FFF8F2',
-};
-
-const ThemeContext = React.createContext<ThemeTokens>(lightTheme);
-
-function useThemeTokens() {
-  return React.useContext(ThemeContext);
-}
 
 const emptyStats: VendorStats = {
   totalBookings: 0,
@@ -168,62 +96,6 @@ const tierBlueprints: MenuTier[] = [
   { name: 'Premium', pricePerHead: 3600, items: ['Signature welcome bites', 'Dessert bar', 'Enhanced tablescape', 'Menu consultation'] },
   { name: 'Deluxe', pricePerHead: 5200, items: ['Live stations', 'Custom plating', 'Lead event captain', 'Late service extension'] },
 ];
-const preferredTierNames = ['Standard', 'Premium', 'Deluxe'];
-
-function uniqueItems(items: string[]) {
-  return Array.from(new Set(items.map(item => item.trim()).filter(Boolean)));
-}
-
-function sortTiers(tiers: MenuTier[]) {
-  return [...tiers].sort((left, right) => {
-    const leftIndex = preferredTierNames.indexOf(left.name);
-    const rightIndex = preferredTierNames.indexOf(right.name);
-    if (leftIndex === -1 && rightIndex === -1) return 0;
-    if (leftIndex === -1) return 1;
-    if (rightIndex === -1) return -1;
-    return leftIndex - rightIndex;
-  });
-}
-
-function toIncrementalTiers(tiers: MenuTier[]) {
-  const running = new Set<string>();
-  return sortTiers(tiers).map(tier => {
-    const fullItems = uniqueItems(tier.items);
-    const extras = fullItems.filter(item => !running.has(item));
-    fullItems.forEach(item => running.add(item));
-    return {
-      ...tier,
-      items: extras.length ? extras : fullItems,
-    };
-  });
-}
-
-function toCumulativeTiers(tiers: MenuTier[]) {
-  const running: string[] = [];
-  return sortTiers(tiers).map(tier => {
-    const combined = uniqueItems([...running, ...tier.items]);
-    running.splice(0, running.length, ...combined);
-    return {
-      ...tier,
-      items: combined,
-    };
-  });
-}
-
-function getTierPreviewItems(tiers: MenuTier[], index: number) {
-  return toCumulativeTiers(tiers)[index]?.items || [];
-}
-
-function toSentenceCase(value: string) {
-  return value.replace(/_/g, ' ').replace(/\b\w/g, char => char.toUpperCase());
-}
-
-function getBookingStatusTone(booking: Booking) {
-  if (booking.lifecycleStage === 'completed') return 'muted';
-  if (booking.lifecycleStage === 'cancelled') return 'muted';
-  return 'default';
-}
-
 const starterTiers: MenuTier[] = tierBlueprints;
 
 const defaultCatererDraft: CatererProfileDraft = {
@@ -244,10 +116,6 @@ const emptySignupDraft: SignupDraft = {
   role: 'customer',
 };
 
-function resolvePrimaryPortfolioItem<T extends { isPrimary?: boolean }>(items: T[]): T | null {
-  return items.find(item => item.isPrimary) || items[0] || null;
-}
-
 function getInitialPasswordResetParams(): Partial<PasswordResetDraft> | null {
   if (Platform.OS !== 'web' || typeof window === 'undefined') return null;
   const params = new URLSearchParams(window.location.search);
@@ -258,6 +126,20 @@ function getInitialPasswordResetParams(): Partial<PasswordResetDraft> | null {
     token,
     newPassword: '',
   };
+}
+
+function confirmDestructiveAction(title: string, message: string, onConfirm: () => void) {
+  if (Platform.OS === 'web' && typeof window !== 'undefined') {
+    if (window.confirm(`${title}\n\n${message}`)) {
+      onConfirm();
+    }
+    return;
+  }
+
+  Alert.alert(title, message, [
+    { text: 'Cancel', style: 'cancel' },
+    { text: 'Continue', style: 'destructive', onPress: onConfirm },
+  ]);
 }
 
 export default function Index() {
@@ -798,61 +680,47 @@ export default function Index() {
 
   const disableAccount = React.useCallback(() => {
     if (!session) return;
-    Alert.alert(
+    confirmDestructiveAction(
       'Disable account?',
       'Your account will be signed out and blocked from use. Caterer profiles are removed from discovery while disabled.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Disable',
-          style: 'destructive',
-          onPress: () => {
-            void (async () => {
-              setBusy(true);
-              setError(null);
-              try {
-                await api.disableMyAccount(session.token);
-                await signOut();
-                Alert.alert('Account disabled', 'Your account has been disabled.');
-              } catch (err) {
-                await handleApiError(err);
-              } finally {
-                setBusy(false);
-              }
-            })();
-          },
-        },
-      ],
+      () => {
+        void (async () => {
+          setBusy(true);
+          setError(null);
+          try {
+            await api.disableMyAccount(session.token);
+            await signOut();
+            Alert.alert('Account disabled', 'Your account has been disabled.');
+          } catch (err) {
+            await handleApiError(err);
+          } finally {
+            setBusy(false);
+          }
+        })();
+      },
     );
   }, [handleApiError, session, signOut]);
 
   const deleteAccount = React.useCallback(() => {
     if (!session) return;
-    Alert.alert(
+    confirmDestructiveAction(
       'Permanently delete account?',
       'This removes your account and related account data. This action cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete forever',
-          style: 'destructive',
-          onPress: () => {
-            void (async () => {
-              setBusy(true);
-              setError(null);
-              try {
-                await api.deleteMyAccount(session.token);
-                await signOut();
-                Alert.alert('Account deleted', 'Your account has been permanently deleted.');
-              } catch (err) {
-                await handleApiError(err);
-              } finally {
-                setBusy(false);
-              }
-            })();
-          },
-        },
-      ],
+      () => {
+        void (async () => {
+          setBusy(true);
+          setError(null);
+          try {
+            await api.deleteMyAccount(session.token);
+            await signOut();
+            Alert.alert('Account deleted', 'Your account has been permanently deleted.');
+          } catch (err) {
+            await handleApiError(err);
+          } finally {
+            setBusy(false);
+          }
+        })();
+      },
     );
   }, [handleApiError, session, signOut]);
 
@@ -1001,6 +869,40 @@ export default function Index() {
       } finally {
         setBusy(false);
       }
+    },
+    [handleApiError, refreshAll, session],
+  );
+
+  const deletePortfolioImage = React.useCallback(
+    (imageId: string) => {
+      if (!session) return;
+      confirmDestructiveAction(
+        'Delete portfolio image?',
+        'This removes the image from your public caterer portfolio.',
+        () => {
+          void (async () => {
+            setBusy(true);
+            setError(null);
+            try {
+              await api.deletePortfolioImage(session.token, imageId);
+              setMyCatererProfile(current =>
+                current
+                  ? {
+                      ...current,
+                      portfolio: current.portfolio.filter(item => item.id !== imageId),
+                    }
+                  : current,
+              );
+              await refreshAll();
+              Alert.alert('Image deleted', 'The image has been removed from your portfolio.');
+            } catch (err) {
+              await handleApiError(err);
+            } finally {
+              setBusy(false);
+            }
+          })();
+        },
+      );
     },
     [handleApiError, refreshAll, session],
   );
@@ -1572,6 +1474,7 @@ export default function Index() {
                   onUpdateDraft={updateUploadDraft}
                   onRemoveDraft={removeUploadDraft}
                   onMakePrimary={imageId => void makePortfolioImagePrimary(imageId)}
+                  onDelete={deletePortfolioImage}
                 />
               ) : null}
 
@@ -1777,293 +1680,6 @@ function BootScreen() {
   );
 }
 
-function AuthFlow(props: {
-  screen: AuthScreen;
-  loginDraft: LoginDraft;
-  passwordResetDraft: PasswordResetDraft;
-  signupDraft: SignupDraft;
-  busy: boolean;
-  onNavigate: (screen: AuthScreen) => void;
-  onChangeLogin: (patch: Partial<LoginDraft>) => void;
-  onChangePasswordReset: (patch: Partial<PasswordResetDraft>) => void;
-  onChangeSignup: (patch: Partial<SignupDraft>) => void;
-  onLogin: () => void;
-  onReactivate: () => void;
-  onRequestPasswordReset: () => void;
-  onConfirmPasswordReset: () => void;
-  onSignup: () => void;
-}) {
-  return (
-    <Screen>
-      {props.screen === 'welcome' ? (
-        <>
-          <ImageBackground
-            source={{ uri: 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=1200&q=80' }}
-            style={styles.welcomeHero}
-            imageStyle={styles.welcomeHeroImage}
-          >
-            <View style={styles.welcomeOverlay}>
-              <MunchBrandLockup compact />
-              <Text style={styles.welcomeEyebrow}>Event dining, reimagined</Text>
-              <Text style={styles.welcomeTitle}>Find caterers that feel premium before the first tasting.</Text>
-              <Text style={styles.welcomeBody}>
-                Browse real portfolios, request structured quotes, track bookings, and keep every vendor conversation in one polished mobile workflow.
-              </Text>
-            </View>
-          </ImageBackground>
-          <PrimaryButton label="Create account" onPress={() => props.onNavigate('signup')} />
-          <SecondaryButton label="I already have an account" onPress={() => props.onNavigate('login')} />
-        </>
-      ) : null}
-
-      {props.screen === 'login' ? (
-        <>
-          <SectionHeader eyebrow="Sign in" title="Return to your bookings, quotes, and conversations." />
-          <Field
-            label="Email address"
-            value={props.loginDraft.email}
-            onChangeText={value => props.onChangeLogin({ email: value })}
-            autoComplete="off"
-            keyboardType="email-address"
-            autoCapitalize="none"
-          />
-          <Field
-            label="Password"
-            value={props.loginDraft.password}
-            onChangeText={value => props.onChangeLogin({ password: value })}
-            secureTextEntry
-            autoComplete="off"
-            autoCapitalize="none"
-          />
-          <PrimaryButton label={props.busy ? 'Signing in...' : 'Sign in'} onPress={props.onLogin} />
-          <SecondaryButton label="Reactivate disabled account" onPress={props.onReactivate} />
-          <GhostButton label="Forgot password?" onPress={() => props.onNavigate('forgot-password')} />
-          <GhostButton label="Need an account? Create one" onPress={() => props.onNavigate('signup')} />
-        </>
-      ) : null}
-
-      {props.screen === 'forgot-password' ? (
-        <>
-          <SectionHeader eyebrow="Password reset" title="Send a secure reset link to your account email." />
-          <Field
-            label="Email address"
-            value={props.passwordResetDraft.email}
-            onChangeText={value => props.onChangePasswordReset({ email: value })}
-            autoComplete="email"
-            keyboardType="email-address"
-            autoCapitalize="none"
-          />
-          <PrimaryButton label={props.busy ? 'Sending reset link...' : 'Send reset link'} onPress={props.onRequestPasswordReset} />
-          <GhostButton label="Back to sign in" onPress={() => props.onNavigate('login')} />
-        </>
-      ) : null}
-
-      {props.screen === 'reset-password' ? (
-        <>
-          <SectionHeader eyebrow="Set new password" title="Paste the reset token from your email and choose a new password." />
-          <Field
-            label="Email address"
-            value={props.passwordResetDraft.email}
-            onChangeText={value => props.onChangePasswordReset({ email: value })}
-            autoComplete="email"
-            keyboardType="email-address"
-            autoCapitalize="none"
-          />
-          <Field
-            label="Reset token"
-            value={props.passwordResetDraft.token}
-            onChangeText={value => props.onChangePasswordReset({ token: value })}
-            autoComplete="off"
-            autoCapitalize="none"
-          />
-          <Field
-            label="New password"
-            value={props.passwordResetDraft.newPassword}
-            onChangeText={value => props.onChangePasswordReset({ newPassword: value })}
-            secureTextEntry
-            autoComplete="new-password"
-            autoCapitalize="none"
-          />
-          <PrimaryButton label={props.busy ? 'Resetting password...' : 'Reset password'} onPress={props.onConfirmPasswordReset} />
-          <GhostButton label="Back to sign in" onPress={() => props.onNavigate('login')} />
-        </>
-      ) : null}
-
-      {props.screen === 'signup' ? (
-        <>
-          <SectionHeader eyebrow="Join Munch" title="Open the right side of the marketplace from the very first screen." />
-          <RoleSelector value={props.signupDraft.role} onChange={value => props.onChangeSignup({ role: value })} />
-          <Field
-            label="Full name"
-            value={props.signupDraft.fullName}
-            onChangeText={value => props.onChangeSignup({ fullName: value })}
-            autoComplete="name"
-            autoCapitalize="words"
-          />
-          <Field
-            label="Username"
-            value={props.signupDraft.username}
-            onChangeText={value => props.onChangeSignup({ username: value })}
-            autoComplete="off"
-            autoCapitalize="none"
-          />
-          <Field
-            label="Email"
-            value={props.signupDraft.email}
-            onChangeText={value => props.onChangeSignup({ email: value })}
-            autoComplete="email"
-            keyboardType="email-address"
-            autoCapitalize="none"
-          />
-          <Field
-            label="Password"
-            value={props.signupDraft.password}
-            onChangeText={value => props.onChangeSignup({ password: value })}
-            secureTextEntry
-            autoComplete="new-password"
-            autoCapitalize="none"
-          />
-          <PrimaryButton label={props.busy ? 'Creating account...' : 'Create account'} onPress={props.onSignup} />
-          <GhostButton label="Back to sign in" onPress={() => props.onNavigate('login')} />
-        </>
-      ) : null}
-    </Screen>
-  );
-}
-
-function Header(props: { title: string; onBack?: () => void }) {
-  const theme = useThemeTokens();
-  return (
-    <View style={[styles.header, { backgroundColor: theme.page }]}>
-      {props.onBack ? (
-        <Pressable style={[styles.backButton, { backgroundColor: theme.surface }]} onPress={props.onBack}>
-          <Ionicons name="arrow-back" size={18} color={theme.text} />
-        </Pressable>
-      ) : (
-        <View style={styles.backButtonPlaceholder} />
-      )}
-      <View style={styles.headerTitleWrap}>
-        <Text style={[styles.headerKicker, { color: theme.textMuted }]}>Munch</Text>
-        <Text style={[styles.headerTitle, { color: theme.text }]}>{props.title}</Text>
-      </View>
-      <View style={[styles.headerBadge, { backgroundColor: theme.headerBadge }]}>
-        <Ionicons name="sparkles" size={14} color={palette.gold500} />
-      </View>
-    </View>
-  );
-}
-
-function MunchBrandLockup(props: { compact?: boolean; theme?: 'light' | 'dark' }) {
-  const tokens = useThemeTokens();
-  const dark = props.theme ? props.theme === 'dark' : tokens.mode === 'dark';
-  return (
-    <View style={[styles.brandLockup, props.compact ? styles.brandLockupCompact : undefined]}>
-      <View style={[styles.brandSeal, dark ? styles.brandSealDark : undefined, props.compact ? styles.brandSealCompact : undefined]}>
-        <View style={[styles.brandSealHalo, dark ? styles.brandSealHaloDark : undefined]} />
-        <View style={[styles.brandStarBadge, dark ? styles.brandStarBadgeDark : undefined]}>
-          <Ionicons name="star" size={props.compact ? 12 : 14} color={palette.gold500} />
-        </View>
-        <View style={[styles.brandLeafCluster, styles.brandLeafClusterLeft]}>
-          <Ionicons name="leaf-outline" size={props.compact ? 14 : 16} color={dark ? palette.gold300 : palette.green400} />
-          <Ionicons name="leaf-outline" size={props.compact ? 12 : 14} color={dark ? palette.gold300 : palette.green400} />
-        </View>
-        <View style={[styles.brandLeafCluster, styles.brandLeafClusterRight]}>
-          <Ionicons name="leaf-outline" size={props.compact ? 14 : 16} color={dark ? palette.gold300 : palette.green400} />
-          <Ionicons name="leaf-outline" size={props.compact ? 12 : 14} color={dark ? palette.gold300 : palette.green400} />
-        </View>
-        <View style={[styles.brandMedallion, dark ? styles.brandMedallionDark : undefined]}>
-          <Ionicons name="restaurant-outline" size={props.compact ? 26 : 34} color={dark ? palette.gold300 : palette.ink950} />
-        </View>
-      </View>
-      <View style={styles.brandWordmarkWrap}>
-        <Text style={[styles.brandWordmark, dark ? styles.brandWordmarkDark : undefined, props.compact ? styles.brandWordmarkCompact : undefined]}>MUNCH</Text>
-        <Text style={[styles.brandSubmark, dark ? styles.brandSubmarkDark : undefined]}>Catering Studio</Text>
-      </View>
-    </View>
-  );
-}
-
-function SettingStat(props: { label: string; value: string; subtle?: boolean }) {
-  const theme = useThemeTokens();
-  return (
-    <View
-      style={[
-        styles.settingStat,
-        props.subtle ? styles.settingStatSubtle : undefined,
-        { backgroundColor: props.subtle ? theme.surfaceMuted : theme.surfaceElevated },
-      ]}
-    >
-      <Text style={[styles.settingLabel, { color: theme.textMuted }]}>{props.label}</Text>
-      <Text style={[styles.settingValue, { color: theme.text }]}>{props.value}</Text>
-    </View>
-  );
-}
-
-function Screen(props: { children: React.ReactNode; onRefresh?: () => void; refreshing?: boolean }) {
-  const theme = useThemeTokens();
-  return (
-    <ScrollView
-      style={{ backgroundColor: theme.page }}
-      contentContainerStyle={styles.scrollContent}
-      refreshControl={
-        props.onRefresh ? (
-          <RefreshControl refreshing={!!props.refreshing} onRefresh={props.onRefresh} tintColor={palette.gold500} />
-        ) : undefined
-      }
-    >
-      {props.children}
-    </ScrollView>
-  );
-}
-
-function MotionCard(props: { children: React.ReactNode; style?: object }) {
-  const theme = useThemeTokens();
-  const translate = React.useRef(new Animated.Value(18)).current;
-  const opacity = React.useRef(new Animated.Value(0)).current;
-
-  React.useEffect(() => {
-    Animated.parallel([
-      Animated.timing(translate, { toValue: 0, duration: 320, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
-      Animated.timing(opacity, { toValue: 1, duration: 320, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
-    ]).start();
-  }, [opacity, translate]);
-
-  return (
-    <Animated.View
-      style={[
-        styles.card,
-        { backgroundColor: theme.surface, borderColor: theme.border, opacity, transform: [{ translateY: translate }] },
-        props.style,
-      ]}
-    >
-      {props.children}
-    </Animated.View>
-  );
-}
-
-function HeroCard(props: { eyebrow: string; title: string; body: string; dark?: boolean }) {
-  const theme = useThemeTokens();
-  return (
-    <MotionCard style={props.dark ? styles.darkCard : undefined}>
-      {props.dark ? <LinearGradient colors={['rgba(255,255,255,0.02)', 'rgba(201,109,67,0.12)']} style={styles.heroCardGlow} /> : null}
-      <Text style={[styles.eyebrow, props.dark ? styles.darkEyebrow : undefined]}>{props.eyebrow}</Text>
-      <Text style={[styles.heroTitle, { color: props.dark ? theme.inverseText : theme.text }, props.dark ? styles.darkHeroTitle : undefined]}>{props.title}</Text>
-      <Text style={[styles.bodyText, { color: props.dark ? '#E8DED2' : theme.textMuted }, props.dark ? styles.darkBodyText : undefined]}>{props.body}</Text>
-    </MotionCard>
-  );
-}
-
-function SectionHeader(props: { eyebrow?: string; title: string; subtitle?: string }) {
-  const theme = useThemeTokens();
-  return (
-    <View style={styles.sectionHeader}>
-      {props.eyebrow ? <Text style={styles.eyebrow}>{props.eyebrow}</Text> : null}
-      <Text style={[styles.sectionTitle, { color: theme.text }]}>{props.title}</Text>
-      {props.subtitle ? <Text style={[styles.sectionBody, { color: theme.textMuted }]}>{props.subtitle}</Text> : null}
-    </View>
-  );
-}
-
 function CatererCard(props: { caterer: CatererCardData; onPress: () => void }) {
   const theme = useThemeTokens();
   return (
@@ -2161,51 +1777,6 @@ function RatingRow(props: { rating: number; reviewCount: number; priceFrom: numb
   );
 }
 
-function StatusPill(props: { label: string; muted?: boolean }) {
-  const theme = useThemeTokens();
-  return (
-    <View
-      style={[
-        styles.badge,
-        props.muted ? styles.badgeMuted : undefined,
-        { backgroundColor: props.muted ? theme.surfaceMuted : theme.surfaceElevated },
-      ]}
-    >
-      <Text style={[styles.badgeText, { color: props.muted ? theme.textMuted : theme.text }, props.muted ? styles.badgeTextMuted : undefined]}>{props.label}</Text>
-    </View>
-  );
-}
-
-function InlineError(props: { message: string; onDismiss: () => void }) {
-  return (
-    <View style={styles.inlineError}>
-      <Text style={styles.inlineErrorText}>{props.message}</Text>
-      <Pressable onPress={props.onDismiss}>
-        <Ionicons name="close" size={16} color="#8D392D" />
-      </Pressable>
-    </View>
-  );
-}
-
-function BusyStripe() {
-  const theme = useThemeTokens();
-  return (
-    <View style={[styles.busyStripe, { backgroundColor: theme.mode === 'dark' ? '#332A22' : '#FBECDD' }]}>
-      <ActivityIndicator size="small" color={palette.gold500} />
-      <Text style={[styles.busyText, { color: theme.text }]}>Syncing secure data...</Text>
-    </View>
-  );
-}
-
-function Avatar(props: { label: string }) {
-  const theme = useThemeTokens();
-  return (
-    <View style={[styles.avatar, { backgroundColor: theme.mode === 'dark' ? '#2A332A' : palette.ink900 }]}>
-      <Text style={styles.avatarText}>{props.label.slice(0, 2).toUpperCase()}</Text>
-    </View>
-  );
-}
-
 function SearchField(props: { value: string; onChangeText: (value: string) => void; placeholder: string }) {
   const theme = useThemeTokens();
   return (
@@ -2218,89 +1789,6 @@ function SearchField(props: { value: string; onChangeText: (value: string) => vo
         placeholderTextColor={theme.textMuted}
         style={[styles.searchInput, { color: theme.text }]}
       />
-    </View>
-  );
-}
-
-function Field(props: {
-  label: string;
-  value: string;
-  onChangeText: (value: string) => void;
-  secureTextEntry?: boolean;
-  multiline?: boolean;
-  hint?: string;
-  autoComplete?: React.ComponentProps<typeof TextInput>['autoComplete'];
-  autoCapitalize?: React.ComponentProps<typeof TextInput>['autoCapitalize'];
-  keyboardType?: React.ComponentProps<typeof TextInput>['keyboardType'];
-}) {
-  const theme = useThemeTokens();
-  return (
-    <View style={styles.fieldWrap}>
-      <Text style={[styles.fieldLabel, { color: theme.text }]}>{props.label}</Text>
-      <TextInput
-        value={props.value}
-        onChangeText={props.onChangeText}
-        secureTextEntry={props.secureTextEntry}
-        multiline={props.multiline}
-        autoComplete={props.autoComplete}
-        autoCapitalize={props.autoCapitalize ?? 'none'}
-        keyboardType={props.keyboardType}
-        autoCorrect={false}
-        importantForAutofill={props.autoComplete === 'off' ? 'no' : 'auto'}
-        placeholderTextColor={theme.textMuted}
-        style={[styles.fieldInput, { backgroundColor: theme.field, borderColor: theme.fieldBorder, color: theme.text }, props.multiline ? styles.fieldInputMultiline : undefined]}
-      />
-      {props.hint ? <Text style={[styles.fieldHint, { color: theme.textMuted }]}>{props.hint}</Text> : null}
-    </View>
-  );
-}
-
-function RoleSelector(props: { value: 'customer' | 'caterer'; onChange: (value: 'customer' | 'caterer') => void }) {
-  const theme = useThemeTokens();
-  return (
-    <View style={styles.fieldWrap}>
-      <Text style={[styles.fieldLabel, { color: theme.text }]}>Choose your path</Text>
-      <Text style={[styles.fieldHint, { color: theme.textMuted }]}>Pick the experience you want Munch to unlock first. You can still expand access later.</Text>
-      <View style={styles.roleStage}>
-        <Pressable
-          style={[styles.roleCardEditorial, { backgroundColor: theme.surface, borderColor: theme.border }, props.value === 'customer' ? styles.roleCardEditorialActive : undefined]}
-          onPress={() => props.onChange('customer')}
-        >
-          <View style={styles.roleTopLine}>
-            <View style={styles.roleIconWrap}>
-              <Ionicons name="sparkles" size={18} color={props.value === 'customer' ? palette.gold500 : palette.slate500} />
-            </View>
-            <StatusPill label="Booking side" muted={props.value !== 'customer'} />
-          </View>
-          <Text style={[styles.roleEditorialTitle, { color: theme.text }]}>Plan and book unforgettable events</Text>
-          <Text style={[styles.roleEditorialBody, { color: theme.textMuted }]}>
-            Browse standout caterers, compare polished menus, request tailored quotes, and manage every conversation from one premium workspace.
-          </Text>
-          <View style={styles.roleFootRow}>
-            <Text style={[styles.roleFootLabel, { color: theme.textMuted }]}>Best for hosts, planners, and event teams</Text>
-            {props.value === 'customer' ? <Ionicons name="checkmark-circle" size={20} color={palette.gold500} /> : null}
-          </View>
-        </Pressable>
-        <Pressable
-          style={[styles.roleCardEditorial, { backgroundColor: theme.surface, borderColor: theme.border }, props.value === 'caterer' ? styles.roleCardEditorialActive : undefined]}
-          onPress={() => props.onChange('caterer')}
-        >
-          <View style={styles.roleTopLine}>
-            <View style={styles.roleIconWrap}>
-              <Ionicons name="restaurant" size={18} color={props.value === 'caterer' ? palette.gold500 : palette.slate500} />
-            </View>
-            <StatusPill label="Studio side" muted={props.value !== 'caterer'} />
-          </View>
-          <Text style={[styles.roleEditorialTitle, { color: theme.text }]}>Present your brand like a premium studio</Text>
-          <Text style={[styles.roleEditorialBody, { color: theme.textMuted }]}>
-            Receive real inquiries, publish your culinary portfolio, refine your public profile, and turn demand into confirmed bookings with clarity.
-          </Text>
-          <View style={styles.roleFootRow}>
-            <Text style={[styles.roleFootLabel, { color: theme.textMuted }]}>Best for caterers, chefs, and hospitality brands</Text>
-            {props.value === 'caterer' ? <Ionicons name="checkmark-circle" size={20} color={palette.gold500} /> : null}
-          </View>
-        </Pressable>
-      </View>
     </View>
   );
 }
@@ -2333,6 +1821,7 @@ function VendorPortfolioSection(props: {
   onUpdateDraft: (draftId: string, patch: Partial<UploadDraft>) => void;
   onRemoveDraft: (draftId: string) => void;
   onMakePrimary: (imageId: string) => void;
+  onDelete: (imageId: string) => void;
 }) {
   const theme = useThemeTokens();
   return (
@@ -2365,6 +1854,7 @@ function VendorPortfolioSection(props: {
           <View style={styles.portfolioMetaRow}>
             {item.caption ? <Text style={[styles.cardTitle, { color: theme.text }]}>{item.caption}</Text> : null}
             {item.isPrimary ? <StatusPill label="Main image" /> : <GhostButton label="Set as main" onPress={() => props.onMakePrimary(item.id)} />}
+            <GhostButton label="Delete" onPress={() => props.onDelete(item.id)} />
           </View>
           {item.description ? <Text style={[styles.bodyText, { color: theme.textMuted }]}>{item.description}</Text> : null}
         </MotionCard>
@@ -2430,86 +1920,6 @@ function TierEditorSection(props: {
   );
 }
 
-function TabBar(props: {
-  items: { key: string; label: string; icon: keyof typeof Ionicons.glyphMap }[];
-  active: string;
-  onChange: (value: string) => void;
-}) {
-  const theme = useThemeTokens();
-  return (
-    <BlurView intensity={36} tint={theme.mode === 'dark' ? 'dark' : 'light'} style={[styles.tabBarShell, { borderColor: theme.shellBorder }]}>
-      <View style={[styles.tabBar, { backgroundColor: theme.shell }]}>
-        {props.items.map(item => {
-          const active = props.active === item.key;
-          return (
-            <Pressable key={item.key} style={styles.tabBarItem} onPress={() => props.onChange(item.key)}>
-              <View
-                style={[
-                  styles.tabBarItemInner,
-                  active ? styles.tabBarItemActive : undefined,
-                  { backgroundColor: active ? (theme.mode === 'dark' ? '#2D372E' : '#F4E6D8') : 'rgba(0,0,0,0)' },
-                ]}
-              >
-                <Ionicons name={item.icon} size={18} color={active ? palette.gold500 : theme.textMuted} />
-                <Text style={[styles.tabBarText, { color: active ? palette.gold500 : theme.textMuted }, active ? styles.tabBarTextActive : undefined]}>{item.label}</Text>
-              </View>
-            </Pressable>
-          );
-        })}
-      </View>
-    </BlurView>
-  );
-}
-
-function ThemeToggleBar(props: { value: ThemeMode; onChange: (value: ThemeMode) => void }) {
-  const theme = useThemeTokens();
-  return (
-    <View style={[styles.themeToggleBar, { backgroundColor: theme.surfaceMuted, borderColor: theme.border }]}>
-      {(['light', 'dark'] as ThemeMode[]).map(item => {
-        const active = props.value === item;
-        return (
-          <Pressable key={item} style={styles.themeToggleOption} onPress={() => props.onChange(item)}>
-            <View style={[styles.themeToggleInner, { backgroundColor: active ? palette.gold500 : 'rgba(0,0,0,0)' }]}>
-              <Ionicons name={item === 'light' ? 'sunny-outline' : 'moon-outline'} size={16} color={active ? lightTheme.inverseText : theme.textMuted} />
-              <Text style={[styles.themeToggleText, { color: active ? lightTheme.inverseText : theme.textMuted }]}>{item === 'light' ? 'Light' : 'Dark'}</Text>
-            </View>
-          </Pressable>
-        );
-      })}
-    </View>
-  );
-}
-
-function ButtonRow(props: { children: React.ReactNode }) {
-  return <View style={styles.buttonRow}>{props.children}</View>;
-}
-
-function PrimaryButton(props: { label: string; onPress: () => void }) {
-  return (
-    <Pressable style={styles.primaryButton} onPress={props.onPress}>
-      <Text style={styles.primaryButtonText}>{props.label}</Text>
-    </Pressable>
-  );
-}
-
-function SecondaryButton(props: { label: string; onPress: () => void }) {
-  const theme = useThemeTokens();
-  return (
-    <Pressable style={[styles.secondaryButton, { backgroundColor: theme.mode === 'dark' ? '#2A332A' : '#EFE1D0', borderColor: theme.border }]} onPress={props.onPress}>
-      <Text style={[styles.secondaryButtonText, { color: theme.text }]}>{props.label}</Text>
-    </Pressable>
-  );
-}
-
-function GhostButton(props: { label: string; onPress: () => void }) {
-  const theme = useThemeTokens();
-  return (
-    <Pressable style={[styles.ghostButton, { borderColor: theme.border, backgroundColor: theme.ghost }]} onPress={props.onPress}>
-      <Text style={[styles.ghostButtonText, { color: theme.text }]}>{props.label}</Text>
-    </Pressable>
-  );
-}
-
 const styles = StyleSheet.create({
   page: {
     flex: 1,
@@ -2517,59 +1927,6 @@ const styles = StyleSheet.create({
   },
   appChrome: {
     flex: 1,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.sm,
-    paddingBottom: spacing.md,
-  },
-  headerTitleWrap: {
-    alignItems: 'center',
-    gap: 2,
-  },
-  headerKicker: {
-    color: palette.slate500,
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 1.6,
-    textTransform: 'uppercase',
-  },
-  headerTitle: {
-    color: palette.ink950,
-    fontSize: 22,
-    fontWeight: '800',
-    letterSpacing: 0.2,
-  },
-  backButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: palette.white,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  backButtonPlaceholder: {
-    width: 42,
-  },
-  headerBadge: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: '#F7E2D4',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  scrollContent: {
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.xxxl,
-    gap: spacing.md,
-  },
-  heroCardGlow: {
-    ...StyleSheet.absoluteFillObject,
-    borderRadius: radius.md,
   },
   bootContainer: {
     flex: 1,
@@ -2589,107 +1946,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.md,
   },
-  brandLockup: {
-    alignItems: 'center',
-    gap: spacing.md,
-  },
-  brandLockupCompact: {
-    alignItems: 'flex-start',
-    gap: spacing.sm,
-  },
-  brandSeal: {
-    width: 132,
-    height: 132,
-    alignItems: 'center',
-    justifyContent: 'center',
-    position: 'relative',
-  },
-  brandSealCompact: {
-    width: 96,
-    height: 96,
-  },
-  brandSealDark: {
-    boxShadow: '0px 12px 24px rgba(232, 170, 122, 0.08)',
-  },
-  brandSealHalo: {
-    position: 'absolute',
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: 'rgba(255,255,255,0.12)',
-  },
-  brandSealHaloDark: {
-    backgroundColor: 'rgba(232, 170, 122, 0.11)',
-  },
-  brandStarBadge: {
-    position: 'absolute',
-    top: 4,
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: palette.white,
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 2,
-  },
-  brandStarBadgeDark: {
-    backgroundColor: '#2E382C',
-  },
-  brandMedallion: {
-    width: 92,
-    height: 92,
-    borderRadius: 46,
-    borderWidth: 2,
-    borderColor: palette.green400,
-    backgroundColor: 'rgba(255,255,255,0.8)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  brandMedallionDark: {
-    borderColor: palette.gold300,
-    backgroundColor: '#20281F',
-  },
-  brandLeafCluster: {
-    position: 'absolute',
-    top: 44,
-    gap: 4,
-    zIndex: 2,
-  },
-  brandLeafClusterLeft: {
-    left: 4,
-    transform: [{ rotate: '-18deg' }],
-  },
-  brandLeafClusterRight: {
-    right: 4,
-    transform: [{ rotate: '18deg' }],
-  },
-  brandWordmarkWrap: {
-    alignItems: 'center',
-    gap: 2,
-  },
-  brandWordmark: {
-    color: palette.ink950,
-    fontSize: 22,
-    fontWeight: '900',
-    letterSpacing: 4,
-  },
-  brandWordmarkCompact: {
-    fontSize: 18,
-    letterSpacing: 3,
-  },
-  brandWordmarkDark: {
-    color: palette.white,
-  },
-  brandSubmark: {
-    color: palette.slate700,
-    fontSize: 12,
-    fontWeight: '700',
-    letterSpacing: 2,
-    textTransform: 'uppercase',
-  },
-  brandSubmarkDark: {
-    color: '#EADFD2',
-  },
   bootLogo: {
     color: palette.white,
     fontSize: 34,
@@ -2700,99 +1956,16 @@ const styles = StyleSheet.create({
     color: '#DCE2EF',
     fontSize: 15,
   },
-  welcomeHero: {
-    height: 500,
-    justifyContent: 'flex-end',
-    marginTop: spacing.md,
-  },
-  welcomeHeroImage: {
-    borderRadius: radius.lg,
-  },
-  welcomeOverlay: {
-    backgroundColor: 'rgba(24, 32, 25, 0.56)',
-    padding: spacing.xxl,
-    gap: spacing.md,
-    borderRadius: radius.lg,
-  },
   settingsHeroCard: {
     gap: spacing.lg,
   },
   settingsHeroMeta: {
     gap: spacing.md,
   },
-  welcomeEyebrow: {
-    color: palette.gold400,
-    fontWeight: '800',
-    textTransform: 'uppercase',
-    letterSpacing: 1.1,
-  },
-  welcomeTitle: {
-    color: palette.white,
-    fontSize: 40,
-    fontWeight: '900',
-    lineHeight: 46,
-    letterSpacing: -0.8,
-  },
-  welcomeBody: {
-    color: '#F3EAE0',
-    fontSize: 15,
-    lineHeight: 24,
-  },
-  card: {
-    backgroundColor: palette.white,
-    borderRadius: radius.md,
-    padding: spacing.lg,
-    gap: spacing.md,
-    borderWidth: 1,
-    borderColor: 'rgba(201, 109, 67, 0.08)',
-    boxShadow: '0px 12px 26px rgba(71, 49, 38, 0.10)',
-    elevation: 6,
-  },
-  darkCard: {
-    backgroundColor: palette.ink950,
-  },
-  eyebrow: {
-    color: palette.gold500,
-    fontWeight: '800',
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-    fontSize: 12,
-  },
-  darkEyebrow: {
-    color: palette.gold300,
-  },
-  heroTitle: {
-    color: palette.ink950,
-    fontSize: 31,
-    fontWeight: '900',
-    lineHeight: 37,
-    letterSpacing: -0.5,
-  },
-  darkHeroTitle: {
-    color: palette.white,
-  },
   bodyText: {
     color: palette.slate700,
     lineHeight: 22,
     fontSize: 15,
-  },
-  darkBodyText: {
-    color: '#E8DED2',
-  },
-  sectionHeader: {
-    gap: spacing.sm,
-    marginTop: spacing.sm,
-  },
-  sectionTitle: {
-    color: palette.ink950,
-    fontSize: 27,
-    fontWeight: '900',
-    lineHeight: 33,
-    letterSpacing: -0.35,
-  },
-  sectionBody: {
-    color: palette.slate700,
-    lineHeight: 22,
   },
   cardImage: {
     width: '100%',
@@ -2884,135 +2057,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
   },
-  badge: {
-    backgroundColor: '#F3E1CC',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: radius.pill,
-    alignSelf: 'flex-start',
-  },
-  badgeMuted: {
-    backgroundColor: '#F7EFE4',
-  },
-  badgeText: {
-    color: palette.ink950,
-    fontWeight: '700',
-    fontSize: 12,
-    textTransform: 'capitalize',
-  },
-  badgeTextMuted: {
-    color: palette.slate700,
-  },
-  inlineError: {
-    marginHorizontal: spacing.lg,
-    marginBottom: spacing.sm,
-    backgroundColor: '#F9E2DA',
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.md,
-  },
-  inlineErrorText: {
-    color: '#8A402B',
-    flex: 1,
-    fontWeight: '600',
-  },
-  busyStripe: {
-    marginHorizontal: spacing.lg,
-    marginBottom: spacing.sm,
-    backgroundColor: '#FBECDD',
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-  },
-  busyText: {
-    color: palette.ink950,
-    fontWeight: '700',
-  },
-  fieldWrap: {
-    gap: spacing.sm,
-  },
-  fieldLabel: {
-    color: palette.ink950,
-    fontWeight: '700',
-  },
-  fieldInput: {
-    backgroundColor: '#FFF9F3',
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: 'rgba(201, 109, 67, 0.14)',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.lg,
-    color: palette.ink950,
-    minHeight: 56,
-  },
-  fieldInputMultiline: {
-    minHeight: 132,
-    textAlignVertical: 'top',
-  },
-  fieldHint: {
-    color: palette.slate500,
-    fontSize: 12,
-  },
-  roleStage: {
-    gap: spacing.md,
-  },
-  roleCardEditorial: {
-    backgroundColor: palette.white,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: palette.border,
-    padding: spacing.xl,
-    gap: spacing.sm,
-    boxShadow: '0px 8px 18px rgba(77, 54, 41, 0.05)',
-    elevation: 4,
-  },
-  roleCardEditorialActive: {
-    borderColor: palette.gold500,
-    backgroundColor: '#FEF0E7',
-  },
-  roleTopLine: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  roleIconWrap: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: '#F7E2D4',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  roleEditorialTitle: {
-    color: palette.ink950,
-    fontWeight: '800',
-    fontSize: 18,
-    lineHeight: 24,
-  },
-  roleEditorialBody: {
-    color: palette.slate700,
-    lineHeight: 22,
-    fontSize: 14,
-  },
-  roleFootRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingTop: spacing.sm,
-  },
-  roleFootLabel: {
-    color: palette.slate500,
-    fontSize: 12,
-    fontWeight: '700',
-    flex: 1,
-  },
   searchField: {
     backgroundColor: '#FFF9F4',
     borderRadius: radius.md,
@@ -3036,16 +2080,6 @@ const styles = StyleSheet.create({
   settingsList: {
     gap: spacing.sm,
   },
-  settingStat: {
-    backgroundColor: '#F6EBDD',
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    gap: 4,
-  },
-  settingStatSubtle: {
-    backgroundColor: '#F6EFE7',
-  },
   settingLabel: {
     color: palette.slate500,
     fontSize: 12,
@@ -3053,29 +2087,12 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.6,
   },
-  settingValue: {
-    color: palette.ink950,
-    fontSize: 15,
-    fontWeight: '700',
-  },
   portfolioMetaRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     gap: spacing.md,
     flexWrap: 'wrap',
-  },
-  avatar: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
-    backgroundColor: palette.ink900,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarText: {
-    color: '#F3D0AE',
-    fontWeight: '900',
   },
   statsCard: {
     flexDirection: 'row',
@@ -3093,66 +2110,6 @@ const styles = StyleSheet.create({
     color: palette.ink950,
     fontSize: 22,
     fontWeight: '900',
-  },
-  tabBarShell: {
-    marginTop: -4,
-    borderTopLeftRadius: radius.lg,
-    borderTopRightRadius: radius.lg,
-    overflow: 'hidden',
-    borderTopWidth: 1,
-    borderColor: 'rgba(230, 212, 193, 0.88)',
-  },
-  tabBar: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    backgroundColor: 'rgba(255, 248, 242, 0.9)',
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.sm,
-  },
-  tabBarItem: {
-    flex: 1,
-    paddingHorizontal: spacing.xs,
-  },
-  tabBarItemInner: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    borderRadius: radius.pill,
-    paddingVertical: spacing.sm,
-  },
-  tabBarItemActive: {
-    backgroundColor: '#F4E6D8',
-  },
-  tabBarText: {
-    color: palette.slate500,
-    fontWeight: '700',
-    fontSize: 12,
-  },
-  tabBarTextActive: {
-    color: palette.gold500,
-    fontWeight: '800',
-  },
-  themeToggleBar: {
-    flexDirection: 'row',
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    padding: spacing.xs,
-    gap: spacing.xs,
-  },
-  themeToggleOption: {
-    flex: 1,
-  },
-  themeToggleInner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-    borderRadius: radius.pill,
-    paddingVertical: spacing.md,
-  },
-  themeToggleText: {
-    fontWeight: '800',
-    fontSize: 14,
   },
   chatBubble: {
     maxWidth: '82%',
@@ -3199,53 +2156,6 @@ const styles = StyleSheet.create({
     backgroundColor: palette.gold500,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  primaryButton: {
-    backgroundColor: palette.gold500,
-    borderRadius: radius.pill,
-    paddingVertical: spacing.lg,
-    alignItems: 'center',
-    flex: 1,
-    boxShadow: '0px 8px 16px rgba(138, 74, 46, 0.18)',
-    elevation: 4,
-  },
-  primaryButtonText: {
-    color: '#FFF8F2',
-    fontWeight: '800',
-    fontSize: 15,
-  },
-  secondaryButton: {
-    backgroundColor: '#EFE1D0',
-    borderRadius: radius.pill,
-    paddingVertical: spacing.lg,
-    alignItems: 'center',
-    flex: 1,
-    borderWidth: 1,
-    borderColor: 'rgba(102, 126, 93, 0.12)',
-  },
-  secondaryButtonText: {
-    color: palette.ink950,
-    fontWeight: '800',
-    fontSize: 15,
-  },
-  ghostButton: {
-    borderColor: '#D8B89D',
-    borderWidth: 1,
-    borderRadius: radius.pill,
-    paddingVertical: spacing.lg,
-    alignItems: 'center',
-    flex: 1,
-    backgroundColor: 'rgba(255, 252, 248, 0.55)',
-  },
-  ghostButtonText: {
-    color: palette.ink950,
-    fontWeight: '700',
-    fontSize: 15,
-  },
-  buttonRow: {
-    flexDirection: 'row',
-    gap: spacing.md,
-    flexWrap: 'wrap',
   },
   tagRow: {
     flexDirection: 'row',
