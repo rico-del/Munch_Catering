@@ -108,6 +108,8 @@ const defaultCatererDraft: CatererProfileDraft = {
   tiers: starterTiers,
 };
 
+const serviceAuthMessage = 'Sign in or create an account to request quotes, book caterers, message vendors, and manage your event details.';
+
 const emptySignupDraft: SignupDraft = {
   fullName: '',
   username: '',
@@ -192,7 +194,12 @@ export default function Index() {
         const stored = await loadSession();
         if (!stored) {
           if (mounted) {
-            setRoute({ name: 'auth', screen: 'welcome' });
+            setCustomerTab('home');
+            setRoute({ name: 'customer' });
+            const catererPayload = await api.getCaterers();
+            if (mounted) {
+              setCaterers(catererPayload.items);
+            }
           }
           return;
         }
@@ -210,7 +217,16 @@ export default function Index() {
         await clearSession();
         if (mounted) {
           setSession(null);
-          setRoute({ name: 'auth', screen: 'login' });
+          setCustomerTab('home');
+          setRoute({ name: 'customer' });
+          try {
+            const catererPayload = await api.getCaterers();
+            if (mounted) {
+              setCaterers(catererPayload.items);
+            }
+          } catch {
+            setRoute({ name: 'auth', screen: 'login' });
+          }
         }
       } finally {
         if (mounted) setBooting(false);
@@ -244,6 +260,11 @@ export default function Index() {
     setBookings(bookingPayload.items);
     setQuotes(quotePayload.items);
     setConversations(conversationPayload.items);
+  }, []);
+
+  const loadPublicData = React.useCallback(async () => {
+    const catererPayload = await api.getCaterers();
+    setCaterers(catererPayload.items);
   }, []);
 
   const loadVendorData = React.useCallback(async (token: string) => {
@@ -283,11 +304,12 @@ export default function Index() {
 
   const refreshAll = React.useCallback(
     async (showSpinner = false) => {
-      if (!session) return;
       if (showSpinner) setRefreshing(true);
       setError(null);
       try {
-        if (session.user.role === 'caterer') {
+        if (!session) {
+          await loadPublicData();
+        } else if (session.user.role === 'caterer') {
           await loadVendorData(session.token);
         } else {
           await loadCustomerData(session.token);
@@ -298,7 +320,7 @@ export default function Index() {
         if (showSpinner) setRefreshing(false);
       }
     },
-    [handleApiError, loadCustomerData, loadVendorData, session],
+    [handleApiError, loadCustomerData, loadPublicData, loadVendorData, session],
   );
 
   React.useEffect(() => {
@@ -318,8 +340,14 @@ export default function Index() {
     setConversations([]);
     setMyCatererProfile(null);
     setVendorStats(emptyStats);
-    setRoute({ name: 'auth', screen: 'login' });
-  }, []);
+    setCustomerTab('home');
+    setRoute({ name: 'customer' });
+    try {
+      await loadPublicData();
+    } catch {
+      setError('Could not refresh public caterers. Pull to refresh and try again.');
+    }
+  }, [loadPublicData]);
 
   const setAuthenticatedSession = React.useCallback(async (nextSession: Session) => {
     await saveSession(nextSession);
@@ -344,6 +372,34 @@ export default function Index() {
     }
     setRoute({ name: 'auth', screen });
   }, [loginDraft.email]);
+
+  const promptForLogin = React.useCallback((message = serviceAuthMessage) => {
+    setError(message);
+    setRoute({ name: 'auth', screen: 'login' });
+  }, []);
+
+  const requireCustomerSession = React.useCallback(
+    (next: () => void, message?: string) => {
+      if (!session) {
+        promptForLogin(message);
+        return;
+      }
+      next();
+    },
+    [promptForLogin, session],
+  );
+
+  const handleCustomerTabChange = React.useCallback(
+    (value: string) => {
+      const nextTab = value as CustomerTab;
+      if (!session && (nextTab === 'messages' || nextTab === 'bookings' || nextTab === 'profile')) {
+        promptForLogin('Sign in to view your messages, bookings, and account workspace.');
+        return;
+      }
+      setCustomerTab(nextTab);
+    },
+    [promptForLogin, session],
+  );
 
   const handleLogin = React.useCallback(async () => {
     setBusy(true);
@@ -1092,11 +1148,27 @@ export default function Index() {
                 <Text style={[styles.cardTitle, { color: theme.text }]}>{tier.name}</Text>
                 <Text style={[styles.metaText, { color: theme.textMuted }]}>From {formatCurrency(tier.pricePerHead)} per guest</Text>
                 <Text style={[styles.bodyText, { color: theme.textMuted }]}>{tier.items.join(' . ')}</Text>
-                <PrimaryButton label="Book this tier" onPress={() => setRoute({ name: 'checkout', catererId: resolvedCaterer.id, tierName: tier.name })} />
+                <PrimaryButton
+                  label="Book this tier"
+                  onPress={() =>
+                    requireCustomerSession(
+                      () => setRoute({ name: 'checkout', catererId: resolvedCaterer.id, tierName: tier.name }),
+                      'Sign in to create a booking and start the deposit flow for this caterer.',
+                    )
+                  }
+                />
               </MotionCard>
             ))}
             <ButtonRow>
-              <SecondaryButton label="Request quote" onPress={() => setRoute({ name: 'quote-request', catererId: resolvedCaterer.id })} />
+              <SecondaryButton
+                label="Request quote"
+                onPress={() =>
+                  requireCustomerSession(
+                    () => setRoute({ name: 'quote-request', catererId: resolvedCaterer.id }),
+                    'Sign in to send a quote request and keep the inquiry tied to your account.',
+                  )
+                }
+              />
               <GhostButton label="Gallery" onPress={() => setRoute({ name: 'gallery', catererId: resolvedCaterer.id })} />
             </ButtonRow>
           </Screen>
@@ -1292,15 +1364,19 @@ export default function Index() {
                   <PrimaryButton
                     label="Bookings"
                     onPress={() => {
-                      setCustomerTab('bookings');
-                      setRoute({ name: 'customer' });
+                      requireCustomerSession(() => {
+                        setCustomerTab('bookings');
+                        setRoute({ name: 'customer' });
+                      }, 'Sign in to view your bookings and approved quote requests.');
                     }}
                   />
                   <SecondaryButton
                     label="Messages"
                     onPress={() => {
-                      setCustomerTab('messages');
-                      setRoute({ name: 'customer' });
+                      requireCustomerSession(() => {
+                        setCustomerTab('messages');
+                        setRoute({ name: 'customer' });
+                      }, 'Sign in to view messages connected to your event inquiries.');
                     }}
                   />
                 </ButtonRow>
@@ -1565,7 +1641,15 @@ export default function Index() {
                           <Text style={[styles.bodyText, { color: theme.textMuted }]}>{item.description}</Text>
                           <ButtonRow>
                             <StatusPill label="Awaiting payment" />
-                            <PrimaryButton label="Continue to checkout" onPress={() => void continueApprovedQuote(item)} />
+                            <PrimaryButton
+                              label="Continue to checkout"
+                              onPress={() =>
+                                requireCustomerSession(
+                                  () => void continueApprovedQuote(item),
+                                  'Sign in to continue checkout for an approved quote.',
+                                )
+                              }
+                            />
                           </ButtonRow>
                         </MotionCard>
                       ))
@@ -1647,7 +1731,7 @@ export default function Index() {
                 { key: 'profile', label: 'Profile', icon: 'person' },
               ]}
               active={customerTab}
-              onChange={value => setCustomerTab(value as CustomerTab)}
+              onChange={handleCustomerTabChange}
             />
           </>
         )}
