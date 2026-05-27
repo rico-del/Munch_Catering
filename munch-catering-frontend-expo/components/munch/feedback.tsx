@@ -21,7 +21,7 @@ export function InlineError(props: { message: string; onDismiss: () => void }) {
     <View style={styles.inlineError}>
       <Text style={styles.inlineErrorText}>{props.message}</Text>
       <Pressable onPress={props.onDismiss}>
-        <Ionicons name="close" size={16} color="#8D392D" />
+        <Ionicons name="close" size={16} color="#235057" />
       </Pressable>
     </View>
   );
@@ -30,7 +30,7 @@ export function InlineError(props: { message: string; onDismiss: () => void }) {
 export function BusyStripe() {
   const theme = useThemeTokens();
   return (
-    <View style={[styles.busyStripe, { backgroundColor: theme.mode === 'dark' ? '#332A22' : '#FBECDD' }]}>
+    <View style={[styles.busyStripe, { backgroundColor: theme.mode === 'dark' ? '#14282C' : '#E5F0EB' }]}>
       <ActivityIndicator size="small" color={palette.gold500} />
       <Text style={[styles.busyText, { color: theme.text }]}>Syncing secure data...</Text>
     </View>
@@ -40,7 +40,7 @@ export function BusyStripe() {
 export function Avatar(props: { label: string }) {
   const theme = useThemeTokens();
   return (
-    <View style={[styles.avatar, { backgroundColor: theme.mode === 'dark' ? '#2A332A' : palette.ink900 }]}>
+    <View style={[styles.avatar, { backgroundColor: theme.mode === 'dark' ? '#1D3032' : palette.ink900 }]}>
       <Text style={styles.avatarText}>{props.label.slice(0, 2).toUpperCase()}</Text>
     </View>
   );
@@ -48,14 +48,14 @@ export function Avatar(props: { label: string }) {
 
 const styles = StyleSheet.create({
   badge: {
-    backgroundColor: '#F3E1CC',
+    backgroundColor: '#E3EEE9',
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     borderRadius: radius.pill,
     alignSelf: 'flex-start',
   },
   badgeMuted: {
-    backgroundColor: '#F7EFE4',
+    backgroundColor: '#F4F8F6',
   },
   badgeText: {
     color: palette.ink950,
@@ -69,7 +69,7 @@ const styles = StyleSheet.create({
   inlineError: {
     marginHorizontal: spacing.lg,
     marginBottom: spacing.sm,
-    backgroundColor: '#F9E2DA',
+    backgroundColor: '#E6F1F0',
     borderRadius: radius.md,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
@@ -79,14 +79,14 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   inlineErrorText: {
-    color: '#8A402B',
+    color: '#235057',
     flex: 1,
     fontWeight: '600',
   },
   busyStripe: {
     marginHorizontal: spacing.lg,
     marginBottom: spacing.sm,
-    backgroundColor: '#FBECDD',
+    backgroundColor: '#E5F0EB',
     borderRadius: radius.md,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
@@ -107,7 +107,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   avatarText: {
-    color: '#F3D0AE',
+    color: '#D9E7DF',
     fontWeight: '900',
   },
 });

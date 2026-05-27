@@ -46,10 +46,10 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   fieldInput: {
-    backgroundColor: '#FFF9F3',
+    backgroundColor: '#F8FBFA',
     borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: 'rgba(201, 109, 67, 0.14)',
+    borderColor: 'rgba(111, 143, 132, 0.18)',
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.lg,
     color: palette.ink950,

@@ -23,7 +23,7 @@ export function TabBar(props: {
                 style={[
                   styles.tabBarItemInner,
                   active ? styles.tabBarItemActive : undefined,
-                  { backgroundColor: active ? (theme.mode === 'dark' ? '#2D372E' : '#F4E6D8') : 'rgba(0,0,0,0)' },
+                  { backgroundColor: active ? (theme.mode === 'dark' ? '#183034' : '#E5F0EB') : 'rgba(0,0,0,0)' },
                 ]}
               >
                 <Ionicons name={item.icon} size={18} color={active ? palette.gold500 : theme.textMuted} />
@@ -44,12 +44,12 @@ const styles = StyleSheet.create({
     borderTopRightRadius: radius.lg,
     overflow: 'hidden',
     borderTopWidth: 1,
-    borderColor: 'rgba(230, 212, 193, 0.88)',
+    borderColor: 'rgba(216, 225, 222, 0.92)',
   },
   tabBar: {
     flexDirection: 'row',
     justifyContent: 'space-around',
-    backgroundColor: 'rgba(255, 248, 242, 0.9)',
+    backgroundColor: 'rgba(247, 250, 248, 0.84)',
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.sm,
   },
@@ -65,7 +65,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
   },
   tabBarItemActive: {
-    backgroundColor: '#F4E6D8',
+    backgroundColor: '#E5F0EB',
   },
   tabBarText: {
     color: palette.slate500,
