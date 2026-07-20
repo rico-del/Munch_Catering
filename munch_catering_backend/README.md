@@ -37,7 +37,7 @@ Optional password reset email configuration:
 ```env
 RESEND_API_KEY=your_resend_api_key
 EMAIL_FROM=Munch <noreply@your-domain.example>
-PASSWORD_RESET_BASE_URL=https://munchcatering.netlify.app
+PASSWORD_RESET_BASE_URL=http://your-ec2-public-dns
 PASSWORD_RESET_TOKEN_MINUTES=30
 ```
 
@@ -71,6 +71,10 @@ python -m uvicorn munch_catering_backend.main:app --reload
 ```
 
 By default, the API will be available at `http://localhost:8000`.
+
+## Docker Role
+
+In the EC2 Compose setup, this service is the API tier. It is not published directly to the internet; the frontend Nginx container proxies `/api` requests to it.
 
 ## Payment Modes
 - `PAYMENT_PROVIDER=test` is the recommended local default. It keeps payment flows deterministic and safe for development and automated tests.

@@ -1,106 +1,125 @@
-# Munch App
+# Munch Catering
 
-Munch App is a two-part catering marketplace project built around a FastAPI backend and an Expo frontend. The product supports caterer discovery, quote requests, bookings, messaging, portfolio management, and deposit payment flows.
+Munch Catering is a full-stack catering marketplace application built as a group project during my studies. The project combines a FastAPI backend and an Expo-based frontend to support caterer discovery, quote requests, bookings, messaging, portfolio management, and payment initiation flows.
 
-This repository is organized as a simple monorepo with one folder for the backend and one for the frontend.
+This repository is now being framed as a stronger portfolio project by pairing the original application with infrastructure work in Terraform, CI/CD, and cloud deployment. The goal is not to pretend it is a mature production platform, but to show a credible end-to-end engineering journey from product idea to deployment readiness.
 
-## Live Deployment
+## Why this project is valuable for a portfolio
 
-The web app is live at:
+- It demonstrates full-stack product thinking, not only isolated frontend or backend work.
+- It includes real application workflows such as customer-caterer interaction, booking management, and payments.
+- It can be presented as a group project with clear ownership and collaboration experience.
+- It becomes more compelling when paired with infrastructure and deployment work, especially Terraform, GitHub Actions, and AWS deployment practices.
 
-```text
-https://munchcatering.netlify.app/
-```
+## Deployment direction
 
-The production web build is hosted on Netlify and points at the deployed FastAPI backend through `EXPO_PUBLIC_API_URL`.
+The app is now prepared for an AWS EC2 deployment using Docker Compose.
 
-## Project Structure
+The EC2 setup is intentionally simple and fits a free-tier portfolio deployment:
+
+- web tier: Expo web build served by Nginx
+- API tier: FastAPI backend running behind the web container
+- data tier: MongoDB running as a private Compose service
+
+## Project structure
+
 - `munch_catering_backend` contains the FastAPI API, business logic, tests, and payment integration layer
-- `munch-catering-frontend-expo` contains the Expo app for customer and caterer workflows
+- `munch-catering-frontend-expo` contains the Expo app for the customer and caterer experience
+- `docker-compose.yml` runs the web, API, and database tiers together for EC2
+- `.env.docker.example` shows the runtime values needed by the backend container
 
-## What The Product Covers
-- customer signup, login, and account management
+## Product scope
+
+The application supports:
+
+- customer sign-up, login, and account management
 - caterer profile management and portfolio publishing
 - quote requests and booking conversion
 - booking lifecycle tracking
 - direct customer-caterer messaging
 - payment initiation with mock mode and M-Pesa Daraja support
 
-## Screenshots
+## Tech stack
 
-The app presents two connected experiences: the web interface highlights the customer journey, while the native mobile interface focuses on caterer operations.
+- Backend: FastAPI, Python, MongoDB via Motor
+- Frontend: Expo, React Native, TypeScript
+- Deployment: Docker Compose on AWS EC2
+- Infrastructure: Terraform, AWS, CI/CD workflows
 
-### Customer Web Experience
-
-| Home | Discover |
-| --- | --- |
-| <img src="munch-catering-frontend-expo/assets/images/Home%28web%29.png" alt="Munch customer web home screen" width="420"> | <img src="munch-catering-frontend-expo/assets/images/Discover%28web%29.png" alt="Munch customer web caterer discovery screen" width="420"> |
-
-| Bookings | Messages |
-| --- | --- |
-| <img src="munch-catering-frontend-expo/assets/images/Bookings%28web%29.png" alt="Munch customer web bookings screen" width="420"> | <img src="munch-catering-frontend-expo/assets/images/Message%28web%29.png" alt="Munch customer web messaging screen" width="420"> |
-
-| Profile | Settings |
-| --- | --- |
-| <img src="munch-catering-frontend-expo/assets/images/Profile%28web%29.png" alt="Munch customer web profile screen" width="420"> | <img src="munch-catering-frontend-expo/assets/images/Settings%28web%29.png" alt="Munch customer web settings screen" width="420"> |
-
-| Sign In | Login |
-| --- | --- |
-| <img src="munch-catering-frontend-expo/assets/images/sign-in%28web%29.png" alt="Munch customer web sign in screen" width="420"> | <img src="munch-catering-frontend-expo/assets/images/login%28web%29.png" alt="Munch customer web login screen" width="420"> |
-
-### Caterer Native Mobile Experience
-
-| Admin Dashboard | Inquiries | Bookings |
-| --- | --- | --- |
-| <img src="munch-catering-frontend-expo/assets/images/Admin%20Dashboard%28mobile%29.png" alt="Munch caterer mobile admin dashboard" width="180"> | <img src="munch-catering-frontend-expo/assets/images/Inquiries%28mobile%29.png" alt="Munch caterer mobile inquiries screen" width="180"> | <img src="munch-catering-frontend-expo/assets/images/Bookings%28mobile%29.png" alt="Munch caterer mobile bookings screen" width="180"> |
-
-| Portfolio | Messages | Profile |
-| --- | --- | --- |
-| <img src="munch-catering-frontend-expo/assets/images/Portfolio%28mobile%29.png" alt="Munch caterer mobile portfolio screen" width="180"> | <img src="munch-catering-frontend-expo/assets/images/Message%28mobile%29.png" alt="Munch caterer mobile messaging screen" width="180"> | <img src="munch-catering-frontend-expo/assets/images/Profile1%28mobile%29.png" alt="Munch caterer mobile profile screen" width="180"> |
-
-| Profile Details | Profile Preview | Sign In | Login |
-| --- | --- | --- | --- |
-| <img src="munch-catering-frontend-expo/assets/images/Profile2%28mobile%29.png" alt="Munch caterer mobile profile details screen" width="150"> | <img src="munch-catering-frontend-expo/assets/images/Profile3%28mobile%29.png" alt="Munch caterer mobile profile preview screen" width="150"> | <img src="munch-catering-frontend-expo/assets/images/sign-in%28mobile%29.png" alt="Munch caterer mobile sign in screen" width="150"> | <img src="munch-catering-frontend-expo/assets/images/login%28mobile%29.png" alt="Munch caterer mobile login screen" width="150"> |
-
-## Running The Project Locally
+## Local development
 
 ### Backend
+
 ```bash
 cd munch_catering_backend
 python -m venv venv
-.\venv\Scripts\activate
+source venv/bin/activate
 pip install -r requirements.txt
-python -m uvicorn main:app --reload
+python -m uvicorn munch_catering_backend.main:app --reload
 ```
 
 ### Frontend
+
 ```bash
 cd munch-catering-frontend-expo
 npm install
 npx expo start
 ```
 
-## Local Environment Notes
+## Environment notes
+
 - The backend uses a private `.env` file and includes `.env.example` for safe setup.
 - The frontend can point at the backend through `EXPO_PUBLIC_API_URL`.
-- For safe local work, the backend payment provider can remain in `test` mode.
+- In the Docker web build, the frontend calls the backend through `/api`, which Nginx proxies to the API container.
+- Payment integrations should remain in test mode unless real sandbox credentials are configured.
 - Real Daraja sandbox usage requires valid credentials and a public callback URL.
 
-## Checks
+## Docker deployment
+
+From the repository root:
+
+```bash
+cp .env.docker.example .env
+docker compose up -d --build
+```
+
+The public entrypoint is the frontend container on port `80`. The backend is only reached through Nginx at `/api`, and MongoDB is not published to the host.
+
+## CI/CD pipeline
+
+The GitHub Actions workflow runs the checks before any EC2 deployment can happen:
+
+- frontend dependency install, TypeScript check, lint, and web build
+- backend dependency install and automated test suite
+- Docker Compose validation
+- backend and frontend image builds
+- image vulnerability scans for high and critical findings
+
+The deploy job only runs from the manual workflow button, and it depends on all checks passing first. It uses AWS Systems Manager to reach the EC2 instance, then pulls the selected branch and runs the three-tier Compose stack.
+
+## Verification checks
 
 ### Backend
+
 ```bash
 cd munch_catering_backend
 python -m unittest discover -s tests -v
 ```
 
 ### Frontend
+
 ```bash
 cd munch-catering-frontend-expo
 npx tsc --noEmit
 npm run lint
 ```
 
+## Portfolio framing
 
-## Notes
-This repo is currently structured for straightforward local development. It is easy to evolve  later because the frontend and backend are already cleanly separated.
+This project is strongest when described as a group project that evolved into a more complete engineering portfolio piece. In a professional context, the message should be:
+
+- the application was built as a collaborative academic project
+- it was then strengthened with modern engineering practices around deployment, infrastructure, and CI/CD
+- it demonstrates both product development and operational awareness
+
+That framing is more credible than presenting it as a fully mature startup product.
