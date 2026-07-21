@@ -130,15 +130,25 @@ jobs:
           load: true
           tags: munch-catering-frontend:ci
 
-      - name: Scan backend image
-        uses: aquasecurity/trivy-action@v0.33.1
-        with:
-          image-ref: munch-catering-backend:ci
-          trivy-version: v0.65.0
-          format: table
-          severity: CRITICAL,HIGH
-          ignore-unfixed: true
-          exit-code: "1"
+      - name: Install Trivy
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wget gnupg lsb-release
+          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | \
+            gpg --dearmor | \
+            sudo tee /usr/share/keyrings/trivy.gpg >/dev/null
+          echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | \
+            sudo tee /etc/apt/sources.list.d/trivy.list
+          sudo apt-get update
+          sudo apt-get install -y trivy
+
+      - name: Scan backend
+        run: |
+          trivy image \
+            --severity HIGH,CRITICAL \
+            --ignore-unfixed \
+            --exit-code 1 \
+            munch-catering-backend:ci
 
       - name: Scan frontend image
         uses: aquasecurity/trivy-action@v0.33.1
