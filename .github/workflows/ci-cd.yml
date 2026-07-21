@@ -154,7 +154,7 @@ jobs:
               --scanners vuln \
               --severity HIGH,CRITICAL \
               --ignore-unfixed \
-              --skip-version-check
+              --skip-version-check \
               --exit-code 1 \
               "$image"
           done
