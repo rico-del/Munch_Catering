@@ -11,7 +11,7 @@ ARG EXPO_PUBLIC_API_URL=/api
 ENV EXPO_PUBLIC_API_URL=$EXPO_PUBLIC_API_URL
 RUN npm run build:web
 
-FROM nginx:1.27.5-alpine3.22
+FROM nginx:1.28-alpine
 
 RUN apk update && apk upgrade --no-cache && apk list --installed
 
