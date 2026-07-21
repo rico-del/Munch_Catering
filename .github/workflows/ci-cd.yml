@@ -148,13 +148,19 @@ jobs:
             munch-catering-backend:ci \
             munch-catering-frontend:ci
           do
-            echo "Scanning $image..."
             trivy image \
+              --scanners vuln \
               --severity HIGH,CRITICAL \
               --ignore-unfixed \
               --exit-code 1 \
               "$image"
           done
+
+      - name: Scan repository for secrets
+        run: |
+          trivy fs \
+            --scanners secret \
+            .
 
   deploy:
     name: Manual EC2 deploy
