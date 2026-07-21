@@ -131,7 +131,7 @@ jobs:
           tags: munch-catering-frontend:ci
 
       - name: Scan backend image
-        uses: aquasecurity/trivy-action@0.33.1
+        uses: aquasecurity/trivy-action@v0.33.1
         with:
           image-ref: munch-catering-backend:ci
           format: table
@@ -140,7 +140,7 @@ jobs:
           exit-code: "1"
 
       - name: Scan frontend image
-        uses: aquasecurity/trivy-action@0.24.0
+        uses: aquasecurity/trivy-action@v0.33.1
         with:
           image-ref: munch-catering-frontend:ci
           format: table
