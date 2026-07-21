@@ -142,23 +142,19 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y trivy
 
-      - name: Scan backend
+      - name: Scan Docker images
         run: |
-          trivy image \
-            --severity HIGH,CRITICAL \
-            --ignore-unfixed \
-            --exit-code 1 \
-            munch-catering-backend:ci
-
-      - name: Scan frontend image
-        uses: aquasecurity/trivy-action@v0.33.1
-        with:
-          image-ref: munch-catering-frontend:ci
-          trivy-version: v0.65.0
-          format: table
-          severity: CRITICAL,HIGH
-          ignore-unfixed: true
-          exit-code: "1"
+          for image in \
+            munch-catering-backend:ci \
+            munch-catering-frontend:ci
+          do
+            echo "Scanning $image..."
+            trivy image \
+              --severity HIGH,CRITICAL \
+              --ignore-unfixed \
+              --exit-code 1 \
+              "$image"
+          done
 
   deploy:
     name: Manual EC2 deploy
