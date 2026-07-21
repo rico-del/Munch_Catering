@@ -129,6 +129,16 @@ jobs:
           build-args: EXPO_PUBLIC_API_URL=/api
           load: true
           tags: munch-catering-frontend:ci
+#temporary debugging
+      - name: Inspect frontend image
+        run: |
+          echo "=== Alpine version ==="
+          docker run --rm munch-catering-frontend:ci cat /etc/alpine-release
+    
+          echo ""
+          echo "=== Installed packages ==="
+          docker run --rm munch-catering-frontend:ci sh -c \
+            "apk list --installed | grep -E 'openssl|libssl|libcrypto|musl|libxml2|libpng|zlib|c-ares'"
 
       - name: Install Trivy
         run: |
