@@ -13,7 +13,7 @@ RUN npm run build:web
 
 FROM nginx:1.27.5-alpine3.22
 
-RUN apk update && apk upgrade --no-cache
+RUN apk update && apk upgrade --no-cache && apk list --installed
 
 COPY deploy/nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/dist /usr/share/nginx/html
