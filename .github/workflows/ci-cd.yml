@@ -126,11 +126,12 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: munch-catering-frontend-expo
-          build-args: EXPO_PUBLIC_API_URL=/api
+          no-cache: true
+          pull: true
           load: true
+          build-args: EXPO_PUBLIC_API_URL=/api
           tags: munch-catering-frontend:ci
 
-          
       - name: Install Trivy
         run: |
           sudo apt-get update
