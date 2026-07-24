@@ -11,7 +11,7 @@ The deployed web app is available at:
 ```text
 https://munchcatering.netlify.app/
 ```
-
+But is currently migrating to cloud on AWS.
 Netlify builds the Expo web app and uses `EXPO_PUBLIC_API_URL` to connect to the deployed backend.
 
 ## What The App Includes
