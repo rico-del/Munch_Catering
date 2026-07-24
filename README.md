@@ -104,3 +104,4 @@ npm run lint
 
 ## Notes
 This repo is currently structured for straightforward local development. It is easy to evolve  later because the frontend and backend are already cleanly separated.
+The app is currently evlolving for the cloud(Dockerization, Iac, and cloud deployment on AWS).
