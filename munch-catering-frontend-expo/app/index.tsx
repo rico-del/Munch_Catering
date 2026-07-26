@@ -2,6 +2,7 @@ import React from 'react';
 import {
   Alert,
   Animated,
+  Easing,
   Image,
   Platform,
   Pressable,
@@ -13,6 +14,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import { LinearGradient } from 'expo-linear-gradient';
 
 import { ButtonRow, GhostButton, PrimaryButton, SecondaryButton } from '@/components/munch/buttons';
 import { Field } from '@/components/munch/field';
@@ -108,6 +110,10 @@ const defaultCatererDraft: CatererProfileDraft = {
   tiers: starterTiers,
 };
 
+const serviceAuthMessage = 'Sign in or create an account to request quotes, book caterers, message vendors, and manage your event details.';
+const cateringHeroImage = require('@/assets/generated/catering-hero.png');
+const cateringDetailImage = require('@/assets/generated/catering-detail.png');
+
 const emptySignupDraft: SignupDraft = {
   fullName: '',
   username: '',
@@ -192,7 +198,12 @@ export default function Index() {
         const stored = await loadSession();
         if (!stored) {
           if (mounted) {
-            setRoute({ name: 'auth', screen: 'welcome' });
+            setCustomerTab('home');
+            setRoute({ name: 'customer' });
+            const catererPayload = await api.getCaterers();
+            if (mounted) {
+              setCaterers(catererPayload.items);
+            }
           }
           return;
         }
@@ -210,7 +221,16 @@ export default function Index() {
         await clearSession();
         if (mounted) {
           setSession(null);
-          setRoute({ name: 'auth', screen: 'login' });
+          setCustomerTab('home');
+          setRoute({ name: 'customer' });
+          try {
+            const catererPayload = await api.getCaterers();
+            if (mounted) {
+              setCaterers(catererPayload.items);
+            }
+          } catch {
+            setRoute({ name: 'auth', screen: 'login' });
+          }
         }
       } finally {
         if (mounted) setBooting(false);
@@ -244,6 +264,11 @@ export default function Index() {
     setBookings(bookingPayload.items);
     setQuotes(quotePayload.items);
     setConversations(conversationPayload.items);
+  }, []);
+
+  const loadPublicData = React.useCallback(async () => {
+    const catererPayload = await api.getCaterers();
+    setCaterers(catererPayload.items);
   }, []);
 
   const loadVendorData = React.useCallback(async (token: string) => {
@@ -283,11 +308,12 @@ export default function Index() {
 
   const refreshAll = React.useCallback(
     async (showSpinner = false) => {
-      if (!session) return;
       if (showSpinner) setRefreshing(true);
       setError(null);
       try {
-        if (session.user.role === 'caterer') {
+        if (!session) {
+          await loadPublicData();
+        } else if (session.user.role === 'caterer') {
           await loadVendorData(session.token);
         } else {
           await loadCustomerData(session.token);
@@ -298,7 +324,7 @@ export default function Index() {
         if (showSpinner) setRefreshing(false);
       }
     },
-    [handleApiError, loadCustomerData, loadVendorData, session],
+    [handleApiError, loadCustomerData, loadPublicData, loadVendorData, session],
   );
 
   React.useEffect(() => {
@@ -318,8 +344,14 @@ export default function Index() {
     setConversations([]);
     setMyCatererProfile(null);
     setVendorStats(emptyStats);
-    setRoute({ name: 'auth', screen: 'login' });
-  }, []);
+    setCustomerTab('home');
+    setRoute({ name: 'customer' });
+    try {
+      await loadPublicData();
+    } catch {
+      setError('Could not refresh public caterers. Pull to refresh and try again.');
+    }
+  }, [loadPublicData]);
 
   const setAuthenticatedSession = React.useCallback(async (nextSession: Session) => {
     await saveSession(nextSession);
@@ -344,6 +376,34 @@ export default function Index() {
     }
     setRoute({ name: 'auth', screen });
   }, [loginDraft.email]);
+
+  const promptForLogin = React.useCallback((message = serviceAuthMessage) => {
+    setError(message);
+    setRoute({ name: 'auth', screen: 'login' });
+  }, []);
+
+  const requireCustomerSession = React.useCallback(
+    (next: () => void, message?: string) => {
+      if (!session) {
+        promptForLogin(message);
+        return;
+      }
+      next();
+    },
+    [promptForLogin, session],
+  );
+
+  const handleCustomerTabChange = React.useCallback(
+    (value: string) => {
+      const nextTab = value as CustomerTab;
+      if (!session && (nextTab === 'messages' || nextTab === 'bookings' || nextTab === 'profile')) {
+        promptForLogin('Sign in to view your messages, bookings, and account workspace.');
+        return;
+      }
+      setCustomerTab(nextTab);
+    },
+    [promptForLogin, session],
+  );
 
   const handleLogin = React.useCallback(async () => {
     setBusy(true);
@@ -1092,11 +1152,27 @@ export default function Index() {
                 <Text style={[styles.cardTitle, { color: theme.text }]}>{tier.name}</Text>
                 <Text style={[styles.metaText, { color: theme.textMuted }]}>From {formatCurrency(tier.pricePerHead)} per guest</Text>
                 <Text style={[styles.bodyText, { color: theme.textMuted }]}>{tier.items.join(' . ')}</Text>
-                <PrimaryButton label="Book this tier" onPress={() => setRoute({ name: 'checkout', catererId: resolvedCaterer.id, tierName: tier.name })} />
+                <PrimaryButton
+                  label="Book this tier"
+                  onPress={() =>
+                    requireCustomerSession(
+                      () => setRoute({ name: 'checkout', catererId: resolvedCaterer.id, tierName: tier.name }),
+                      'Sign in to create a booking and start the deposit flow for this caterer.',
+                    )
+                  }
+                />
               </MotionCard>
             ))}
             <ButtonRow>
-              <SecondaryButton label="Request quote" onPress={() => setRoute({ name: 'quote-request', catererId: resolvedCaterer.id })} />
+              <SecondaryButton
+                label="Request quote"
+                onPress={() =>
+                  requireCustomerSession(
+                    () => setRoute({ name: 'quote-request', catererId: resolvedCaterer.id }),
+                    'Sign in to send a quote request and keep the inquiry tied to your account.',
+                  )
+                }
+              />
               <GhostButton label="Gallery" onPress={() => setRoute({ name: 'gallery', catererId: resolvedCaterer.id })} />
             </ButtonRow>
           </Screen>
@@ -1292,15 +1368,19 @@ export default function Index() {
                   <PrimaryButton
                     label="Bookings"
                     onPress={() => {
-                      setCustomerTab('bookings');
-                      setRoute({ name: 'customer' });
+                      requireCustomerSession(() => {
+                        setCustomerTab('bookings');
+                        setRoute({ name: 'customer' });
+                      }, 'Sign in to view your bookings and approved quote requests.');
                     }}
                   />
                   <SecondaryButton
                     label="Messages"
                     onPress={() => {
-                      setCustomerTab('messages');
-                      setRoute({ name: 'customer' });
+                      requireCustomerSession(() => {
+                        setCustomerTab('messages');
+                        setRoute({ name: 'customer' });
+                      }, 'Sign in to view messages connected to your event inquiries.');
                     }}
                   />
                 </ButtonRow>
@@ -1512,12 +1592,18 @@ export default function Index() {
             <Screen onRefresh={() => refreshAll(true)} refreshing={refreshing}>
               {customerTab === 'home' ? (
                 <>
-                  <HeroCard
-                    eyebrow="New season menus"
-                    title="A cleaner way to book caterers for weddings, launches, and private events."
-                    body="Shortlist vendors from real portfolios, compare tiers, and move from quote to deposit without leaving the app."
-                    dark
+                  <CulinaryHero
+                    onExplore={() => setCustomerTab('discover')}
+                    onRequest={() =>
+                      requireCustomerSession(
+                        () => {
+                          setCustomerTab('discover');
+                        },
+                        'Sign in to request a tailored quote from a caterer you like.',
+                      )
+                    }
                   />
+                  <FeatureImageCard />
                   <SectionHeader eyebrow="Featured" title="Curated caterers" subtitle="Premium vendors with strong presentation, reviews, and scalable event service." />
                   {caterers.slice(0, 4).map(item => (
                     <CatererCard key={item.id} caterer={item} onPress={() => void openCaterer(item.id)} />
@@ -1565,7 +1651,15 @@ export default function Index() {
                           <Text style={[styles.bodyText, { color: theme.textMuted }]}>{item.description}</Text>
                           <ButtonRow>
                             <StatusPill label="Awaiting payment" />
-                            <PrimaryButton label="Continue to checkout" onPress={() => void continueApprovedQuote(item)} />
+                            <PrimaryButton
+                              label="Continue to checkout"
+                              onPress={() =>
+                                requireCustomerSession(
+                                  () => void continueApprovedQuote(item),
+                                  'Sign in to continue checkout for an approved quote.',
+                                )
+                              }
+                            />
                           </ButtonRow>
                         </MotionCard>
                       ))
@@ -1647,13 +1741,87 @@ export default function Index() {
                 { key: 'profile', label: 'Profile', icon: 'person' },
               ]}
               active={customerTab}
-              onChange={value => setCustomerTab(value as CustomerTab)}
+              onChange={handleCustomerTabChange}
             />
           </>
         )}
         </View>
       </SafeAreaView>
     </ThemeContext.Provider>
+  );
+}
+
+function CulinaryHero(props: { onExplore: () => void; onRequest: () => void }) {
+  const theme = useThemeTokens();
+  const float = React.useRef(new Animated.Value(0)).current;
+
+  React.useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(float, { toValue: 1, duration: 4200, easing: Easing.inOut(Easing.cubic), useNativeDriver: true }),
+        Animated.timing(float, { toValue: 0, duration: 4200, easing: Easing.inOut(Easing.cubic), useNativeDriver: true }),
+      ]),
+    ).start();
+  }, [float]);
+
+  const cardLift = float.interpolate({ inputRange: [0, 1], outputRange: [0, -12] });
+  const orbScale = float.interpolate({ inputRange: [0, 1], outputRange: [1, 1.08] });
+
+  return (
+    <MotionCard style={[styles.culinaryHero, { backgroundColor: theme.mode === 'dark' ? '#071112' : '#EAF2EF' }]}>
+      <Image source={cateringHeroImage} style={styles.culinaryHeroImage} />
+      <LinearGradient colors={['rgba(7,17,18,0.2)', 'rgba(7,17,18,0.78)', 'rgba(7,17,18,0.92)']} style={styles.culinaryHeroOverlay} />
+      <Animated.View style={[styles.heroOrb, styles.heroOrbOne, { transform: [{ scale: orbScale }] }]} />
+      <Animated.View style={[styles.heroGlassPanel, { transform: [{ translateY: cardLift }] }]}>
+        <Text style={styles.heroPill}>Private dining . Events . Caterers</Text>
+        <Text style={styles.culinaryHeroTitle}>Catered moments, curated with calm precision.</Text>
+        <Text style={styles.culinaryHeroBody}>
+          Discover refined caterers, study their portfolios, compare service tiers, and move into quotes only when you are ready.
+        </Text>
+        <ButtonRow>
+          <PrimaryButton label="Explore caterers" onPress={props.onExplore} />
+          <GhostButton label="Request service" onPress={props.onRequest} />
+        </ButtonRow>
+      </Animated.View>
+    </MotionCard>
+  );
+}
+
+function FeatureImageCard() {
+  const theme = useThemeTokens();
+  const lift = React.useRef(new Animated.Value(0)).current;
+
+  React.useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(lift, { toValue: 1, duration: 3600, easing: Easing.inOut(Easing.cubic), useNativeDriver: true }),
+        Animated.timing(lift, { toValue: 0, duration: 3600, easing: Easing.inOut(Easing.cubic), useNativeDriver: true }),
+      ]),
+    ).start();
+  }, [lift]);
+
+  return (
+    <MotionCard style={styles.featureImageCard}>
+      <Animated.Image
+        source={cateringDetailImage}
+        style={[
+          styles.featureImage,
+          {
+            transform: [
+              {
+                scale: lift.interpolate({ inputRange: [0, 1], outputRange: [1, 1.035] }),
+              },
+            ],
+          },
+        ]}
+      />
+      <LinearGradient colors={['rgba(7,17,18,0)', 'rgba(7,17,18,0.68)']} style={styles.featureImageShade} />
+      <View style={styles.featureImageContent}>
+        <Text style={styles.heroPill}>Tasting board</Text>
+        <Text style={[styles.cardTitle, { color: theme.inverseText }]}>See the quality before you commit.</Text>
+        <Text style={styles.featureImageText}>Portfolio-first browsing keeps the experience visual, calm, and service-led.</Text>
+      </View>
+    </MotionCard>
   );
 }
 
@@ -1747,7 +1915,7 @@ function BookingProgress(props: { booking: Booking }) {
   const width = paid ? '100%' : pending ? '72%' : '42%';
   return (
     <View style={styles.progressWrap}>
-      <View style={[styles.progressRail, { backgroundColor: theme.mode === 'dark' ? '#2C382D' : '#EBD8C6' }]}>
+      <View style={[styles.progressRail, { backgroundColor: theme.mode === 'dark' ? '#1C3133' : '#D8E1DE' }]}>
         <View style={[styles.progressBar, { width }]} />
         <View style={[styles.progressDot, { borderColor: theme.surface }, paid ? styles.progressDotPaid : undefined]} />
       </View>
@@ -1767,7 +1935,7 @@ function RatingRow(props: { rating: number; reviewCount: number; priceFrom: numb
   const resolvedRating = hasReviews ? props.rating.toFixed(1) : 'New';
   return (
     <View style={styles.ratingRow}>
-      <View style={[styles.ratingBadge, { backgroundColor: theme.mode === 'dark' ? '#2A231F' : '#FAE6D7' }]}>
+      <View style={[styles.ratingBadge, { backgroundColor: theme.mode === 'dark' ? '#183034' : '#E5F0EB' }]}>
         <Ionicons name="star" size={14} color={palette.gold500} />
         <Text style={[styles.ratingValue, { color: theme.text }]}>{resolvedRating}</Text>
       </View>
@@ -1939,7 +2107,7 @@ const styles = StyleSheet.create({
     width: 280,
     height: 280,
     borderRadius: 140,
-    backgroundColor: '#314035',
+    backgroundColor: '#183034',
     opacity: 0.72,
   },
   bootMark: {
@@ -1964,6 +2132,94 @@ const styles = StyleSheet.create({
   },
   bodyText: {
     color: palette.slate700,
+    lineHeight: 22,
+    fontSize: 15,
+  },
+  culinaryHero: {
+    minHeight: 520,
+    overflow: 'hidden',
+    padding: 0,
+    borderWidth: 0,
+    backgroundColor: palette.ink950,
+  },
+  culinaryHeroImage: {
+    ...StyleSheet.absoluteFillObject,
+    width: '100%',
+    height: '100%',
+  },
+  culinaryHeroOverlay: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  heroOrb: {
+    position: 'absolute',
+    width: 240,
+    height: 240,
+    borderRadius: 120,
+    opacity: 0.28,
+  },
+  heroOrbOne: {
+    right: -82,
+    top: 38,
+    backgroundColor: '#B7CFC3',
+  },
+  heroGlassPanel: {
+    marginTop: 230,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.lg,
+    padding: spacing.xl,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: 'rgba(217, 231, 223, 0.28)',
+    backgroundColor: 'rgba(7, 17, 18, 0.62)',
+    gap: spacing.md,
+    boxShadow: '0px 24px 44px rgba(0, 0, 0, 0.22)',
+  },
+  heroPill: {
+    alignSelf: 'flex-start',
+    color: '#D9E7DF',
+    borderColor: 'rgba(217, 231, 223, 0.32)',
+    borderWidth: 1,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+  },
+  culinaryHeroTitle: {
+    color: '#FBFCFA',
+    fontSize: 38,
+    lineHeight: 43,
+    fontWeight: '900',
+    letterSpacing: -0.7,
+  },
+  culinaryHeroBody: {
+    color: '#DCE8E4',
+    fontSize: 15,
+    lineHeight: 23,
+  },
+  featureImageCard: {
+    minHeight: 300,
+    overflow: 'hidden',
+    padding: 0,
+    borderWidth: 0,
+  },
+  featureImage: {
+    ...StyleSheet.absoluteFillObject,
+    width: '100%',
+    height: '100%',
+  },
+  featureImageShade: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  featureImageContent: {
+    marginTop: 128,
+    padding: spacing.xl,
+    gap: spacing.sm,
+  },
+  featureImageText: {
+    color: '#DCE8E4',
     lineHeight: 22,
     fontSize: 15,
   },
@@ -2007,7 +2263,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: '#FAE6D7',
+    backgroundColor: '#E5F0EB',
     borderRadius: radius.pill,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
@@ -2026,7 +2282,7 @@ const styles = StyleSheet.create({
   progressRail: {
     height: 8,
     borderRadius: radius.pill,
-    backgroundColor: '#EBD8C6',
+    backgroundColor: '#D8E1DE',
     overflow: 'hidden',
     justifyContent: 'center',
   },
@@ -2041,9 +2297,9 @@ const styles = StyleSheet.create({
     width: 10,
     height: 10,
     borderRadius: 5,
-    backgroundColor: '#A76A4B',
+    backgroundColor: '#526568',
     borderWidth: 2,
-    borderColor: '#FFF8F2',
+    borderColor: '#FBFCFA',
   },
   progressDotPaid: {
     backgroundColor: palette.gold500,
@@ -2058,10 +2314,10 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   searchField: {
-    backgroundColor: '#FFF9F4',
+    backgroundColor: '#F8FBFA',
     borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: 'rgba(201, 109, 67, 0.12)',
+    borderColor: 'rgba(111, 143, 132, 0.18)',
     paddingHorizontal: spacing.lg,
     flexDirection: 'row',
     alignItems: 'center',
@@ -2143,7 +2399,7 @@ const styles = StyleSheet.create({
   },
   composerInput: {
     flex: 1,
-    backgroundColor: '#F6ECE1',
+    backgroundColor: '#E7F0EC',
     borderRadius: radius.pill,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,

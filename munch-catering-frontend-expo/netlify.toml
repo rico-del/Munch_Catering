@@ -1,7 +1,0 @@
-[build.environment]
-  EXPO_PUBLIC_API_URL = "https://munch-catering.onrender.com"
-
-[[redirects]]
-  from = "/*"
-  to = "/index.html"
-  status = 200

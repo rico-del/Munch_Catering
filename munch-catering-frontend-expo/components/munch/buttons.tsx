@@ -19,7 +19,7 @@ export function PrimaryButton(props: { label: string; onPress: () => void }) {
 export function SecondaryButton(props: { label: string; onPress: () => void }) {
   const theme = useThemeTokens();
   return (
-    <Pressable style={[styles.secondaryButton, { backgroundColor: theme.mode === 'dark' ? '#2A332A' : '#EFE1D0', borderColor: theme.border }]} onPress={props.onPress}>
+    <Pressable style={[styles.secondaryButton, { backgroundColor: theme.mode === 'dark' ? '#1D3032' : '#E5F0EB', borderColor: theme.border }]} onPress={props.onPress}>
       <Text style={[styles.secondaryButtonText, { color: theme.text }]}>{props.label}</Text>
     </Pressable>
   );
@@ -41,7 +41,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.lg,
     alignItems: 'center',
     flex: 1,
-    boxShadow: '0px 8px 16px rgba(138, 74, 46, 0.18)',
+    boxShadow: '0px 12px 24px rgba(15, 49, 52, 0.18)',
     elevation: 4,
   },
   primaryButtonText: {
@@ -50,13 +50,13 @@ const styles = StyleSheet.create({
     fontSize: 15,
   },
   secondaryButton: {
-    backgroundColor: '#EFE1D0',
+    backgroundColor: '#E5F0EB',
     borderRadius: radius.pill,
     paddingVertical: spacing.lg,
     alignItems: 'center',
     flex: 1,
     borderWidth: 1,
-    borderColor: 'rgba(102, 126, 93, 0.12)',
+    borderColor: 'rgba(111, 143, 132, 0.16)',
   },
   secondaryButtonText: {
     color: palette.ink950,
@@ -64,13 +64,13 @@ const styles = StyleSheet.create({
     fontSize: 15,
   },
   ghostButton: {
-    borderColor: '#D8B89D',
+    borderColor: '#C9D8D3',
     borderWidth: 1,
     borderRadius: radius.pill,
     paddingVertical: spacing.lg,
     alignItems: 'center',
     flex: 1,
-    backgroundColor: 'rgba(255, 252, 248, 0.55)',
+    backgroundColor: 'rgba(251, 252, 250, 0.68)',
   },
   ghostButtonText: {
     color: palette.ink950,

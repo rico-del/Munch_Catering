@@ -4,9 +4,9 @@ This is the Expo frontend for the Munch catering marketplace. It provides the cu
 
 The app is designed as a single mobile-first experience with role-aware flows. It connects to the FastAPI backend in the sibling `munch_catering_backend` folder.
 
-## Live Web App
+## Web Deployment
 
-The deployed web app is available at:
+For the AWS deployment, Expo exports the web app as static files and Nginx serves them from the frontend container.
 
 ```text
 https://munchcatering.netlify.app/
@@ -84,7 +84,7 @@ EXPO_PUBLIC_API_URL=http://localhost:8000
 Typical production web setup:
 
 ```bash
-EXPO_PUBLIC_API_URL=https://munch-catering.onrender.com
+EXPO_PUBLIC_API_URL=/api
 ```
 
 Typical Android emulator setup:
@@ -98,5 +98,6 @@ If the variable is not set, the app falls back to local defaults in the API clie
 ## Useful Files
 - `app/index.tsx` contains the main app experience and screen composition
 - `lib/api.ts` wraps backend requests
+- `deploy/nginx.conf` serves the web build and proxies `/api` to the backend container
 - `lib/session.ts` handles persisted auth and theme state
 - `lib/munch-data.ts` contains shared frontend types, formatting helpers, and design tokens

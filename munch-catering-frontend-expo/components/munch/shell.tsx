@@ -106,19 +106,21 @@ export function MotionCard(props: { children: React.ReactNode; style?: StyleProp
   const theme = useThemeTokens();
   const translate = React.useRef(new Animated.Value(18)).current;
   const opacity = React.useRef(new Animated.Value(0)).current;
+  const scale = React.useRef(new Animated.Value(0.985)).current;
 
   React.useEffect(() => {
     Animated.parallel([
-      Animated.timing(translate, { toValue: 0, duration: 320, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
-      Animated.timing(opacity, { toValue: 1, duration: 320, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+      Animated.timing(translate, { toValue: 0, duration: 520, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+      Animated.timing(opacity, { toValue: 1, duration: 520, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+      Animated.timing(scale, { toValue: 1, duration: 520, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
     ]).start();
-  }, [opacity, translate]);
+  }, [opacity, scale, translate]);
 
   return (
     <Animated.View
       style={[
         styles.card,
-        { backgroundColor: theme.surface, borderColor: theme.border, opacity, transform: [{ translateY: translate }] },
+        { backgroundColor: theme.surface, borderColor: theme.border, opacity, transform: [{ translateY: translate }, { scale }] },
         props.style,
       ]}
     >
@@ -131,7 +133,7 @@ export function HeroCard(props: { eyebrow: string; title: string; body: string; 
   const theme = useThemeTokens();
   return (
     <MotionCard style={props.dark ? styles.darkCard : undefined}>
-      {props.dark ? <LinearGradient colors={['rgba(255,255,255,0.02)', 'rgba(201,109,67,0.12)']} style={styles.heroCardGlow} /> : null}
+      {props.dark ? <LinearGradient colors={['rgba(255,255,255,0.04)', 'rgba(111,143,132,0.18)']} style={styles.heroCardGlow} /> : null}
       <Text style={[styles.eyebrow, props.dark ? styles.darkEyebrow : undefined]}>{props.eyebrow}</Text>
       <Text style={[styles.heroTitle, { color: props.dark ? theme.inverseText : theme.text }, props.dark ? styles.darkHeroTitle : undefined]}>{props.title}</Text>
       <Text style={[styles.bodyText, { color: props.dark ? '#E8DED2' : theme.textMuted }, props.dark ? styles.darkBodyText : undefined]}>{props.body}</Text>
@@ -191,7 +193,7 @@ const styles = StyleSheet.create({
     width: 42,
     height: 42,
     borderRadius: 21,
-    backgroundColor: '#F7E2D4',
+    backgroundColor: '#E3EEE9',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -224,7 +226,7 @@ const styles = StyleSheet.create({
     height: 96,
   },
   brandSealDark: {
-    boxShadow: '0px 12px 24px rgba(232, 170, 122, 0.08)',
+    boxShadow: '0px 12px 24px rgba(122, 173, 160, 0.12)',
   },
   brandSealHalo: {
     position: 'absolute',
@@ -234,7 +236,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.12)',
   },
   brandSealHaloDark: {
-    backgroundColor: 'rgba(232, 170, 122, 0.11)',
+    backgroundColor: 'rgba(122, 173, 160, 0.16)',
   },
   brandStarBadge: {
     position: 'absolute',
@@ -248,7 +250,7 @@ const styles = StyleSheet.create({
     zIndex: 2,
   },
   brandStarBadgeDark: {
-    backgroundColor: '#2E382C',
+    backgroundColor: '#183034',
   },
   brandMedallion: {
     width: 92,
@@ -262,7 +264,7 @@ const styles = StyleSheet.create({
   },
   brandMedallionDark: {
     borderColor: palette.gold300,
-    backgroundColor: '#20281F',
+    backgroundColor: '#102022',
   },
   brandLeafCluster: {
     position: 'absolute',
@@ -303,7 +305,7 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   brandSubmarkDark: {
-    color: '#EADFD2',
+    color: '#D9E7DF',
   },
   card: {
     backgroundColor: palette.white,
@@ -311,8 +313,8 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     gap: spacing.md,
     borderWidth: 1,
-    borderColor: 'rgba(201, 109, 67, 0.08)',
-    boxShadow: '0px 12px 26px rgba(71, 49, 38, 0.10)',
+    borderColor: 'rgba(111, 143, 132, 0.14)',
+    boxShadow: '0px 16px 34px rgba(12, 38, 42, 0.12)',
     elevation: 6,
   },
   darkCard: {
@@ -344,7 +346,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
   },
   darkBodyText: {
-    color: '#E8DED2',
+    color: '#DCE8E4',
   },
   sectionHeader: {
     gap: spacing.sm,
@@ -362,14 +364,14 @@ const styles = StyleSheet.create({
     lineHeight: 22,
   },
   settingStat: {
-    backgroundColor: '#F6EBDD',
+    backgroundColor: '#E7F0EC',
     borderRadius: radius.md,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
     gap: 4,
   },
   settingStatSubtle: {
-    backgroundColor: '#F6EFE7',
+    backgroundColor: '#F4F8F6',
   },
   settingLabel: {
     color: palette.slate500,

@@ -173,18 +173,18 @@ export type CatererProfileDraft = {
 };
 
 export const palette = {
-  ink950: '#182019',
-  ink900: '#263127',
-  slate700: '#5F685B',
-  slate500: '#8A8274',
-  cloud100: '#F8F1E8',
-  white: '#FFFCF8',
-  gold500: '#C96D43',
-  gold400: '#E18B5D',
-  gold300: '#F2C8A2',
-  rose300: '#D98B72',
-  green400: '#667E5D',
-  border: '#E6D4C1',
+  ink950: '#071112',
+  ink900: '#102022',
+  slate700: '#526568',
+  slate500: '#839295',
+  cloud100: '#EEF3F1',
+  white: '#FBFCFA',
+  gold500: '#8FAF9F',
+  gold400: '#B7CFC3',
+  gold300: '#D9E7DF',
+  rose300: '#C8D5D0',
+  green400: '#6F8F84',
+  border: '#D8E1DE',
 };
 
 export const spacing = {

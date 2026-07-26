@@ -78,12 +78,12 @@ const styles = StyleSheet.create({
     borderColor: palette.border,
     padding: spacing.xl,
     gap: spacing.sm,
-    boxShadow: '0px 8px 18px rgba(77, 54, 41, 0.05)',
+    boxShadow: '0px 12px 24px rgba(12, 38, 42, 0.08)',
     elevation: 4,
   },
   roleCardEditorialActive: {
     borderColor: palette.gold500,
-    backgroundColor: '#FEF0E7',
+    backgroundColor: '#EAF2EF',
   },
   roleTopLine: {
     flexDirection: 'row',
@@ -94,7 +94,7 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 19,
-    backgroundColor: '#F7E2D4',
+    backgroundColor: '#E3EEE9',
     alignItems: 'center',
     justifyContent: 'center',
   },
