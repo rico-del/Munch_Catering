@@ -8,7 +8,11 @@ The app is designed as a single mobile-first experience with role-aware flows. I
 
 For the AWS deployment, Expo exports the web app as static files and Nginx serves them from the frontend container.
 
-In production Docker builds, the app uses `/api` as the backend base URL. Nginx proxies that path to the FastAPI container, so the browser only needs one public origin.
+```text
+https://munchcatering.netlify.app/
+```
+It is currently migrating to cloud on AWS.
+Netlify builds the Expo web app and uses `EXPO_PUBLIC_API_URL` to connect to the deployed backend.
 
 ## What The App Includes
 - login and signup flows with persisted sessions

@@ -122,4 +122,6 @@ This project is strongest when described as a group project that evolved into a 
 - it was then strengthened with modern engineering practices around deployment, infrastructure, and CI/CD
 - it demonstrates both product development and operational awareness
 
-That framing is more credible than presenting it as a fully mature startup product.
+## Notes
+This repo is currently structured for straightforward local development. It is easy to evolve  later because the frontend and backend are already cleanly separated.
+The app is currently evlolving for the cloud(Dockerization, Iac, and cloud deployment on AWS).
