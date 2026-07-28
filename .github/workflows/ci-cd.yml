@@ -218,7 +218,7 @@ jobs:
             --document-name "AWS-RunShellScript" \
             --comment "Deploy Munch Catering ${GITHUB_SHA}" \
             --parameters commands="[
-              \"set -eu\",
+              \"set -euo pipefail\",
               \"sudo mkdir -p $APP_DIR\",
               \"if [ ! -d $APP_DIR/.git ]; then sudo git clone --branch $APP_BRANCH $APP_REPO_URL $APP_DIR; fi\",
               \"cd $APP_DIR && sudo git fetch --all --prune\",
