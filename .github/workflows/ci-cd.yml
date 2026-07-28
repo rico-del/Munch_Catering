@@ -218,15 +218,15 @@ jobs:
             --document-name "AWS-RunShellScript" \
             --comment "Deploy Munch Catering ${GITHUB_SHA}" \
             --parameters commands="[
-              \"set -eu pipefail\",
+              \"set -eu\",
               \"sudo mkdir -p $APP_DIR\",
               \"if [ ! -d $APP_DIR/.git ]; then sudo git clone --branch $APP_BRANCH $APP_REPO_URL $APP_DIR; fi\",
               \"cd $APP_DIR && sudo git fetch --all --prune\",
               \"cd $APP_DIR && sudo git checkout $APP_BRANCH\",
               \"cd $APP_DIR && sudo git pull --ff-only origin $APP_BRANCH\",
               \"sudo tee $APP_DIR/.env >/dev/null <<'ENVEOF'\",
-              \"APP_ENV=production\",
-              \"WEB_PORT=80\",
+              \"APP_ENV=dev\",
+              \"WEB_PORT=8000\",
               \"MONGO_URI=$MONGO_URI\",
               \"DB_NAME=munch_catering\",
               \"SECRET_KEY=$SECRET_KEY\",
