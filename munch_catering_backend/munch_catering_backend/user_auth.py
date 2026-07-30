@@ -1,6 +1,6 @@
 import hashlib
 import secrets
-from datetime import timedelta
+from datetime import timedelta, timezone
 
 from fastapi import APIRouter, HTTPException, status
 
@@ -114,6 +114,8 @@ async def confirm_password_reset(payload: PasswordResetConfirm):
 
     token_hash = db_user.get("password_reset_token_hash")
     expires_at = db_user.get("password_reset_expires_at")
+    if expires_at and expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
     if not token_hash or not secrets.compare_digest(token_hash, hash_reset_token(payload.token)):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired reset token")
     if not expires_at or expires_at < utc_now():
