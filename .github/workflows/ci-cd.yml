@@ -253,6 +253,7 @@ jobs:
           SECRET_KEY: ${{ secrets.SECRET_KEY }}
           PASSWORD_RESET_BASE_URL: ${{ vars.PASSWORD_RESET_BASE_URL }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          EMAIL_FROM: ${{ vars.EMAIL_FROM || 'Munch <onboarding@resend.dev>' }}
           MONGO_URI: ${{ vars.MONGO_URI || 'mongodb://mongo:27017' }}
           IMAGE_TAG: ${{ needs.docker.outputs.image_tag }}
           ECR_REGISTRY: ${{ env.ECR_REGISTRY }}
@@ -285,6 +286,7 @@ jobs:
               \"ALGORITHM=HS256\",
               \"PASSWORD_RESET_BASE_URL=$PASSWORD_RESET_BASE_URL\",
               \"RESEND_API_KEY=$RESEND_API_KEY\",
+              \"EMAIL_FROM=$EMAIL_FROM\",
               \"PAYMENT_PROVIDER=$PAYMENT_PROVIDER\",
               \"MPESA_ENV=$MPESA_ENV\",
               \"MPESA_CALLBACK_URL=$MPESA_CALLBACK_URL\",
