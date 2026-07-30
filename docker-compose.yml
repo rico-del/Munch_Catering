@@ -1,5 +1,6 @@
 services:
   frontend:
+    image: ${ECR_REGISTRY:-}/munch-catering-frontend:${IMAGE_TAG:-latest}
     build:
       context: ./munch-catering-frontend-expo
       args:
@@ -14,10 +15,11 @@ services:
     restart: unless-stopped
 
   backend:
+    image: ${ECR_REGISTRY:-}/munch-catering-backend:${IMAGE_TAG:-latest}
     build:
       context: ./munch_catering_backend
     environment:
-      APP_ENV: ${APP_ENV:-production}
+      APP_ENV: ${APP_ENV:-dev}
       MONGO_URI: ${MONGO_URI:-mongodb://mongo:27017}
       DB_NAME: ${DB_NAME:-munch_catering}
       SECRET_KEY: ${SECRET_KEY:-change-me-in-production}
