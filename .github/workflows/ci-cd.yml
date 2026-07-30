@@ -105,6 +105,7 @@ jobs:
     needs:
       - frontend
       - backend
+    environment: ${{ github.event.inputs.environment || 'dev' }}
 
     permissions:
       contents: read
