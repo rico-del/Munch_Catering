@@ -256,6 +256,13 @@ jobs:
           MONGO_URI: ${{ vars.MONGO_URI || 'mongodb://mongo:27017' }}
           IMAGE_TAG: ${{ needs.docker.outputs.image_tag }}
           ECR_REGISTRY: ${{ env.ECR_REGISTRY }}
+          PAYMENT_PROVIDER: ${{ vars.PAYMENT_PROVIDER || 'test' }}
+          MPESA_ENV: ${{ vars.MPESA_ENV || 'sandbox' }}
+          MPESA_CALLBACK_URL: ${{ vars.MPESA_CALLBACK_URL }}
+          MPESA_CONSUMER_KEY: ${{ secrets.MPESA_CONSUMER_KEY }}
+          MPESA_CONSUMER_SECRET: ${{ secrets.MPESA_CONSUMER_SECRET }}
+          MPESA_PASSKEY: ${{ secrets.MPESA_PASSKEY }}
+          MPESA_SHORTCODE: ${{ secrets.MPESA_SHORTCODE }}
         run: |
           command_id=$(aws ssm send-command \
             --instance-ids "$EC2_INSTANCE_ID" \
@@ -278,7 +285,13 @@ jobs:
               \"ALGORITHM=HS256\",
               \"PASSWORD_RESET_BASE_URL=$PASSWORD_RESET_BASE_URL\",
               \"RESEND_API_KEY=$RESEND_API_KEY\",
-              \"PAYMENT_PROVIDER=test\",
+              \"PAYMENT_PROVIDER=$PAYMENT_PROVIDER\",
+              \"MPESA_ENV=$MPESA_ENV\",
+              \"MPESA_CALLBACK_URL=$MPESA_CALLBACK_URL\",
+              \"MPESA_CONSUMER_KEY=$MPESA_CONSUMER_KEY\",
+              \"MPESA_CONSUMER_SECRET=$MPESA_CONSUMER_SECRET\",
+              \"MPESA_PASSKEY=$MPESA_PASSKEY\",
+              \"MPESA_SHORTCODE=$MPESA_SHORTCODE\",
               \"IMAGE_TAG=$IMAGE_TAG\",
               \"ECR_REGISTRY=$ECR_REGISTRY\",
               \"ENVEOF\",
