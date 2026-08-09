@@ -13,13 +13,15 @@ This repository is now being framed as a stronger portfolio project by pairing t
 
 ## Deployment direction
 
-The app is now prepared for an AWS EC2 deployment using Docker Compose.
+The app is deployed on AWS EC2 using Docker Compose, with a GitHub Actions CI/CD pipeline handling build, scan, and push to ECR, and a manual SSM-based deploy job to the EC2 instance.
 
 The EC2 setup is intentionally simple and fits a free-tier portfolio deployment:
 
-- web tier: Expo web build served by Nginx
+- web tier: Expo web build served by Nginx (with certbot-provided HTTPS)
 - API tier: FastAPI backend running behind the web container
 - data tier: MongoDB running as a private Compose service
+
+Live HTTP traffic is served over HTTPS, which is also what makes the M-Pesa Daraja sandbox callback reachable from Safaricom.
 
 ## Project structure
 
@@ -71,8 +73,9 @@ npx expo start
 - The backend uses a private `.env` file and includes `.env.example` for safe setup.
 - The frontend can point at the backend through `EXPO_PUBLIC_API_URL`.
 - In the Docker web build, the frontend calls the backend through `/api`, which Nginx proxies to the API container.
-- Payment integrations should remain in test mode unless real sandbox credentials are configured.
-- Real Daraja sandbox usage requires valid credentials and a public callback URL.
+- The live deployment uses the M-Pesa Daraja sandbox (`PAYMENT_PROVIDER=mpesa`, `MPESA_ENV=sandbox`) with valid sandbox credentials.
+- Safaricom callbacks require a publicly reachable HTTPS URL, which the EC2 deployment provides through Nginx and certbot.
+- The `test` payment provider is available for deterministic local development and automated tests.
 
 ## Docker deployment
 

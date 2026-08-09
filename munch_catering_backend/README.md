@@ -26,7 +26,8 @@ Use `.env.example` as the starting point for your private `.env`.
 
 Minimum required values:
 
-```env
+```
+env
 MONGO_URI=your_mongo_connection
 SECRET_KEY=your_jwt_secret
 ALGORITHM=HS256
@@ -34,16 +35,20 @@ ALGORITHM=HS256
 
 Optional password reset email configuration:
 
-```env
+```
+env
 RESEND_API_KEY=your_resend_api_key
 EMAIL_FROM=Munch <noreply@your-domain.example>
 PASSWORD_RESET_BASE_URL=http://your-ec2-public-dns
 PASSWORD_RESET_TOKEN_MINUTES=30
 ```
 
+Current live note: without a private domain, Resend only delivers to the email address used to create the Resend account (the verified sender). Until a custom domain is added, password reset emails reach that verified owner address only.
+
 Optional payment configuration:
 
-```env
+```
+env
 # Safe local default
 PAYMENT_PROVIDER=test
 
@@ -57,6 +62,8 @@ MPESA_SHORTCODE=
 MPESA_CALLBACK_URL=
 ```
 
+The live deployment runs `PAYMENT_PROVIDER=mpesa` with `MPESA_ENV=sandbox`. Nginx and certbot on the EC2 instance provide the public HTTPS endpoint used as `MPESA_CALLBACK_URL`, which Safaricom's Daraja sandbox requires to deliver STK push callbacks.
+
 ## Running The API
 From this folder:
 
@@ -66,7 +73,8 @@ python -m uvicorn main:app --reload
 
 You can also run the package-qualified entrypoint:
 
-```bash
+```
+bash
 python -m uvicorn munch_catering_backend.main:app --reload
 ```
 
@@ -78,12 +86,13 @@ In the EC2 Compose setup, this service is the API tier. It is not published dire
 
 ## Payment Modes
 - `PAYMENT_PROVIDER=test` is the recommended local default. It keeps payment flows deterministic and safe for development and automated tests.
-- `PAYMENT_PROVIDER=mpesa` with `MPESA_ENV=sandbox` enables real Daraja sandbox requests when valid credentials and a public callback URL are configured.
+- `PAYMENT_PROVIDER=mpesa` with `MPESA_ENV=sandbox` is the live configuration. It enables real Daraja sandbox STK push requests, and the EC2 deployment's Nginx + certbot HTTPS endpoint serves as the public callback URL.
 - `PAYMENT_PROVIDER=mpesa` with `MPESA_ENV=live` is intended for production only.
 
 Important notes:
 - `MPESA_CALLBACK_URL` must be publicly reachable for real Daraja usage.
 - `localhost` callback URLs will not work with Safaricom callbacks.
+- The live app uses HTTPS (via Nginx and certbot) so Daraja can reach the callback endpoint.
 
 ## Useful Files
 - `main.py` keeps the local entrypoint simple
@@ -96,6 +105,6 @@ Important notes:
 ## Checks
 Run the backend test suite with:
 
-```bash
-python -m unittest discover -s tests -v
 ```
+bash
+python -m unittest discover -s tests -v
