@@ -6,13 +6,13 @@ The app is designed as a single mobile-first experience with role-aware flows. I
 
 ## Web Deployment
 
-For the AWS deployment, Expo exports the web app as static files and Nginx serves them from the frontend container.
+For the AWS deployment, Expo exports the web app as static files and Nginx serves them from the frontend container. The frontend container is the public entrypoint of the three-tier Docker Compose stack, and Nginx proxies `/api` requests to the backend container.
 
 ```text
-https://munchcatering.netlify.app/
+web build (static) -> Nginx (frontend container on port 80) -> /api (backend container)
 ```
-It is currently migrating to cloud on AWS.
-Netlify builds the Expo web app and uses `EXPO_PUBLIC_API_URL` to connect to the deployed backend.
+
+The CI/CD pipeline (`.github/workflows/ci-cd.yml`) builds the Expo web app, packages it into the frontend container, and deploys the stack to AWS EC2. The frontend connects to the backend through `EXPO_PUBLIC_API_URL`, which is set to `/api` for the Docker/EC2 build so that requests are proxied by Nginx.
 
 ## What The App Includes
 - login and signup flows with persisted sessions
