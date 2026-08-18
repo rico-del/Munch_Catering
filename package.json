@@ -1,0 +1,17 @@
+{
+  "name": "munch-catering-root",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Munch Catering Marketplace - Premium Culinary & Banquet Platform",
+  "scripts": {
+    "dev": "npm --prefix munch-catering-frontend-expo start",
+    "start": "npm --prefix munch-catering-frontend-expo start",
+    "android": "npm --prefix munch-catering-frontend-expo run android",
+    "ios": "npm --prefix munch-catering-frontend-expo run ios",
+    "web": "npm --prefix munch-catering-frontend-expo run web",
+    "build": "npm --prefix munch-catering-frontend-expo run build:web",
+    "build:web": "npm --prefix munch-catering-frontend-expo run build:web",
+    "lint": "npm --prefix munch-catering-frontend-expo run lint",
+    "typecheck": "npm --prefix munch-catering-frontend-expo run typecheck"
+  }
+}

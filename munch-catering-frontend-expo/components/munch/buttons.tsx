@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { palette, radius, spacing } from '@/lib/munch-data';
 import { useThemeTokens } from '@/lib/theme-context';
+import { fonts } from '@/lib/typography';
 
 export function ButtonRow(props: { children: React.ReactNode }) {
   return <View style={styles.buttonRow}>{props.children}</View>;
@@ -10,7 +11,16 @@ export function ButtonRow(props: { children: React.ReactNode }) {
 
 export function PrimaryButton(props: { label: string; onPress: () => void }) {
   return (
-    <Pressable style={styles.primaryButton} onPress={props.onPress}>
+    <Pressable
+      style={({ pressed }) => [
+        styles.primaryButton,
+        {
+          transform: [{ scale: pressed ? 0.975 : 1 }],
+          opacity: pressed ? 0.92 : 1,
+        },
+      ]}
+      onPress={props.onPress}
+    >
       <Text style={styles.primaryButtonText}>{props.label}</Text>
     </Pressable>
   );
@@ -19,7 +29,18 @@ export function PrimaryButton(props: { label: string; onPress: () => void }) {
 export function SecondaryButton(props: { label: string; onPress: () => void }) {
   const theme = useThemeTokens();
   return (
-    <Pressable style={[styles.secondaryButton, { backgroundColor: theme.mode === 'dark' ? '#1D3032' : '#E5F0EB', borderColor: theme.border }]} onPress={props.onPress}>
+    <Pressable
+      style={({ pressed }) => [
+        styles.secondaryButton,
+        {
+          backgroundColor: theme.mode === 'dark' ? '#1D3032' : '#E5F0EB',
+          borderColor: theme.border,
+          transform: [{ scale: pressed ? 0.975 : 1 }],
+          opacity: pressed ? 0.9 : 1,
+        },
+      ]}
+      onPress={props.onPress}
+    >
       <Text style={[styles.secondaryButtonText, { color: theme.text }]}>{props.label}</Text>
     </Pressable>
   );
@@ -28,7 +49,18 @@ export function SecondaryButton(props: { label: string; onPress: () => void }) {
 export function GhostButton(props: { label: string; onPress: () => void }) {
   const theme = useThemeTokens();
   return (
-    <Pressable style={[styles.ghostButton, { borderColor: theme.border, backgroundColor: theme.ghost }]} onPress={props.onPress}>
+    <Pressable
+      style={({ pressed }) => [
+        styles.ghostButton,
+        {
+          borderColor: theme.border,
+          backgroundColor: theme.ghost,
+          transform: [{ scale: pressed ? 0.975 : 1 }],
+          opacity: pressed ? 0.85 : 1,
+        },
+      ]}
+      onPress={props.onPress}
+    >
       <Text style={[styles.ghostButtonText, { color: theme.text }]}>{props.label}</Text>
     </Pressable>
   );
@@ -45,6 +77,7 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   primaryButtonText: {
+    fontFamily: fonts.body,
     color: '#FFF8F2',
     fontWeight: '800',
     fontSize: 15,
@@ -59,6 +92,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(111, 143, 132, 0.16)',
   },
   secondaryButtonText: {
+    fontFamily: fonts.body,
     color: palette.ink950,
     fontWeight: '800',
     fontSize: 15,
@@ -73,6 +107,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(251, 252, 250, 0.68)',
   },
   ghostButtonText: {
+    fontFamily: fonts.body,
     color: palette.ink950,
     fontWeight: '700',
     fontSize: 15,

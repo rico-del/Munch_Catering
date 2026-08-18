@@ -5,6 +5,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { palette, radius, spacing } from '@/lib/munch-data';
 import { useThemeTokens } from '@/lib/theme-context';
+import { fonts } from '@/lib/typography';
 
 export function TabBar(props: {
   items: { key: string; label: string; icon: keyof typeof Ionicons.glyphMap }[];
@@ -18,7 +19,17 @@ export function TabBar(props: {
         {props.items.map(item => {
           const active = props.active === item.key;
           return (
-            <Pressable key={item.key} style={styles.tabBarItem} onPress={() => props.onChange(item.key)}>
+            <Pressable
+              key={item.key}
+              style={({ pressed }) => [
+                styles.tabBarItem,
+                {
+                  transform: [{ scale: pressed ? 0.94 : 1 }],
+                  opacity: pressed ? 0.85 : 1,
+                },
+              ]}
+              onPress={() => props.onChange(item.key)}
+            >
               <View
                 style={[
                   styles.tabBarItemInner,
@@ -68,6 +79,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#E5F0EB',
   },
   tabBarText: {
+    fontFamily: fonts.body,
     color: palette.slate500,
     fontWeight: '700',
     fontSize: 12,

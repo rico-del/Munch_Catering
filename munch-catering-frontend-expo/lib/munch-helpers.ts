@@ -42,8 +42,20 @@ export function toCumulativeTiers(tiers: MenuTier[]) {
   });
 }
 
+/**
+ * Independent tier model: each tier carries its complete, self-contained item
+ * list. No inheritance or running accumulation is applied. This is the model
+ * used for editing and saving caterer tiers going forward.
+ */
+export function toIndependentTiers(tiers: MenuTier[]) {
+  return sortTiers(tiers).map(tier => ({
+    ...tier,
+    items: uniqueItems(tier.items),
+  }));
+}
+
 export function getTierPreviewItems(tiers: MenuTier[], index: number) {
-  return toCumulativeTiers(tiers)[index]?.items || [];
+  return toIndependentTiers(tiers)[index]?.items || [];
 }
 
 export function toSentenceCase(value: string) {

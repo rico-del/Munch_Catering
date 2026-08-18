@@ -7,6 +7,7 @@ import { MunchBrandLockup, Screen, SectionHeader } from '@/components/munch/shel
 import { palette, radius, spacing } from '@/lib/munch-data';
 import { RoleSelector } from '@/features/auth/role-selector';
 import { AuthScreen, LoginDraft, PasswordResetDraft, SignupDraft } from '@/features/auth/types';
+import { fonts } from '@/lib/typography';
 
 export function AuthFlow(props: {
   screen: AuthScreen;
@@ -178,12 +179,14 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg,
   },
   welcomeEyebrow: {
+    fontFamily: fonts.body,
     color: palette.gold400,
     fontWeight: '800',
     textTransform: 'uppercase',
     letterSpacing: 1.1,
   },
   welcomeTitle: {
+    fontFamily: fonts.display,
     color: palette.white,
     fontSize: 40,
     fontWeight: '900',
@@ -191,6 +194,7 @@ const styles = StyleSheet.create({
     letterSpacing: -0.8,
   },
   welcomeBody: {
+    fontFamily: fonts.body,
     color: '#F3EAE0',
     fontSize: 15,
     lineHeight: 24,
