@@ -1869,7 +1869,7 @@ function FeatureImageCard() {
       />
       <LinearGradient colors={['rgba(7,17,18,0.08)', 'rgba(7,17,18,0.72)']} style={styles.featureImageShade} />
       <View style={styles.featureImageContent}>
-        <Text style={[styles.heroPill, typeScale.label]}>Chef's Tasting Board & Mise en Place</Text>
+        <Text style={[styles.heroPill, typeScale.label]}>{"Chef's Tasting Board & Mise en Place"}</Text>
         <Text style={[styles.cardTitle, typeScale.cardTitle, { color: theme.inverseText }]}>See the artistry before you commit.</Text>
         <Text style={[styles.featureImageText, typeScale.body]}>Portfolio-first browsing keeps planning your event visual, inspiring, and effortless.</Text>
       </View>
