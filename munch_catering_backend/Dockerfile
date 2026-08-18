@@ -1,14 +1,17 @@
-FROM python:3.12-slim
+FROM python:3.12-alpine
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-RUN addgroup --system munch && adduser --system --ingroup munch munch
+RUN addgroup -S munch && adduser -S munch -G munch
+
+RUN apk add --no-cache --virtual .build-deps gcc musl-dev libffi-dev
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt \
+    && apk del .build-deps
 
 COPY main.py .
 COPY munch_catering_backend ./munch_catering_backend
