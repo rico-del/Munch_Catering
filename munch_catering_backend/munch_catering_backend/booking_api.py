@@ -161,8 +161,8 @@ async def create_booking(
         if not tier:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid tier selected")
 
-        price_per_head = float(tier.get("price_per_head", 0))
-        total = round(guest_count * price_per_head, 2)
+        price_per_head = float(tier.get("price_per_head", 0) or tier.get("price", 0))
+        total = round(price_per_head, 2)
 
     deposit = round(total * 0.20, 2)
     balance = round(total - deposit, 2)

@@ -13,6 +13,7 @@ import {
   Text,
   TextInput,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -95,16 +96,6 @@ const emptyStats: VendorStats = {
   inquiryConversionRate: 0,
 };
 
-// New caterers start with a blank board: three empty tier templates they fill
-// in themselves. Each tier is fully independent — no inheritance from lower
-// tiers. Existing caterers' saved Standard/Premium/Deluxe data is preserved.
-const tierBlueprints: MenuTier[] = [
-  { name: 'Standard', pricePerHead: 2200, items: [] },
-  { name: 'Premium', pricePerHead: 3600, items: [] },
-  { name: 'Deluxe', pricePerHead: 5200, items: [] },
-];
-const starterTiers: MenuTier[] = tierBlueprints;
-
 const defaultCatererDraft: CatererProfileDraft = {
   businessName: '',
   description: '',
@@ -112,7 +103,7 @@ const defaultCatererDraft: CatererProfileDraft = {
   location: '',
   heroTagline: '',
   cuisines: [],
-  tiers: starterTiers,
+  tiers: [],
 };
 
 const serviceAuthMessage = 'Sign in or create an account to request quotes, book caterers, message vendors, and manage your event details.';
@@ -183,27 +174,18 @@ export default function Index() {
   const [quoteDraft, setQuoteDraft] = React.useState({ description: '', guestCount: '80', budgetEstimate: '250000' });
   const [checkoutDraft, setCheckoutDraft] = React.useState({ customerPhone: '0712345678', guestCount: '120' });
   const [messageDraft, setMessageDraft] = React.useState('');
+  const pendingPostAuthAction = React.useRef<(() => void) | null>(null);
 
   React.useEffect(() => {
     let mounted = true;
 
     async function bootstrap() {
       try {
-        const storedTheme = await loadThemePreference();
-        if (mounted) {
-          setThemeMode(storedTheme);
-        }
-        const resetParams = getInitialPasswordResetParams();
-        if (resetParams) {
-          if (mounted) {
-            setPasswordResetDraft(current => ({ ...current, ...resetParams }));
-            setRoute({ name: 'auth', screen: 'reset-password' });
-          }
-          return;
-        }
         const stored = await loadSession();
         if (!stored) {
+          const storedTheme = await loadThemePreference();
           if (mounted) {
+            setThemeMode(storedTheme);
             setCustomerTab('home');
             setRoute({ name: 'customer' });
             try {
@@ -220,6 +202,8 @@ export default function Index() {
 
         const user = await api.getMe(stored.token);
         if (!mounted) return;
+        const userTheme = await loadThemePreference(user.id);
+        setThemeMode(userTheme);
         setSession({ token: stored.token, user });
         setProfileDraft({ fullName: user.fullName, username: user.username });
         if (user.role === 'caterer') {
@@ -231,6 +215,7 @@ export default function Index() {
         await clearSession();
         if (mounted) {
           setSession(null);
+          setThemeMode('light');
           setCustomerTab('home');
           setRoute({ name: 'customer' });
           try {
@@ -305,7 +290,7 @@ export default function Index() {
         location: profile.location || '',
         heroTagline: profile.heroTagline,
         cuisines: profile.cuisines,
-        tiers: profile.tiers.length ? toIndependentTiers(profile.tiers) : starterTiers,
+        tiers: profile.tiers.length ? toIndependentTiers(profile.tiers) : [],
       });
     } catch (err) {
       setMyCatererProfile(null);
@@ -346,6 +331,8 @@ export default function Index() {
   const signOut = React.useCallback(async () => {
     await clearSession();
     setSession(null);
+    pendingPostAuthAction.current = null;
+    setThemeMode('light');
     setActiveCaterer(null);
     setActiveBooking(null);
     setMessages([]);
@@ -367,7 +354,13 @@ export default function Index() {
     await saveSession(nextSession);
     setSession(nextSession);
     setProfileDraft({ fullName: nextSession.user.fullName, username: nextSession.user.username });
-    if (nextSession.user.role === 'caterer') {
+    const userTheme = await loadThemePreference(nextSession.user.id);
+    setThemeMode(userTheme);
+    if (pendingPostAuthAction.current) {
+      const action = pendingPostAuthAction.current;
+      pendingPostAuthAction.current = null;
+      action();
+    } else if (nextSession.user.role === 'caterer') {
       setRoute({ name: 'vendor' });
     } else {
       setRoute({ name: 'customer' });
@@ -395,6 +388,7 @@ export default function Index() {
   const requireCustomerSession = React.useCallback(
     (next: () => void, message?: string) => {
       if (!session) {
+        pendingPostAuthAction.current = next;
         promptForLogin(message);
         return;
       }
@@ -738,7 +732,7 @@ export default function Index() {
         location: profile.location || '',
         heroTagline: profile.heroTagline,
         cuisines: profile.cuisines,
-        tiers: profile.tiers.length ? toIndependentTiers(profile.tiers) : starterTiers,
+        tiers: profile.tiers.length ? toIndependentTiers(profile.tiers) : [],
       });
       await refreshAll();
       Alert.alert('Brand profile updated', 'Your public caterer profile is now live.');
@@ -796,19 +790,17 @@ export default function Index() {
   }, [handleApiError, session, signOut]);
 
   const addCatererTier = React.useCallback(() => {
-    setCatererDraft(current => {
-      const usedNames = new Set(current.tiers.map(item => item.name));
-      const nextTemplate =
-        tierBlueprints.find(item => !usedNames.has(item.name)) || {
-          name: `Tier ${current.tiers.length + 1}`,
-          pricePerHead: (current.tiers.at(-1)?.pricePerHead || 2200) + 800,
+    setCatererDraft(current => ({
+      ...current,
+      tiers: [
+        ...current.tiers,
+        {
+          name: '',
+          pricePerHead: 0,
           items: [],
-        };
-      return {
-        ...current,
-        tiers: [...current.tiers, { ...nextTemplate, items: [...nextTemplate.items] }],
-      };
-    });
+        },
+      ],
+    }));
   }, []);
 
   const updateCatererTier = React.useCallback((index: number, patch: Partial<MenuTier>) => {
@@ -827,16 +819,10 @@ export default function Index() {
   }, []);
 
   const removeCatererTier = React.useCallback((index: number) => {
-    setCatererDraft(current => {
-      if (current.tiers.length <= 1) {
-        Alert.alert('Keep one tier', 'A caterer profile needs at least one package tier.');
-        return current;
-      }
-      return {
-        ...current,
-        tiers: current.tiers.filter((_, tierIndex) => tierIndex !== index),
-      };
-    });
+    setCatererDraft(current => ({
+      ...current,
+      tiers: current.tiers.filter((_, tierIndex) => tierIndex !== index),
+    }));
   }, []);
 
   const pickPortfolioImage = React.useCallback(async () => {
@@ -1168,7 +1154,7 @@ export default function Index() {
               {featuredPortfolioImage ? (
                 <View style={styles.detailImageSection}>
                   <Pressable onPress={() => setRoute({ name: 'gallery', catererId: resolvedCaterer.id })}>
-                    <Image source={{ uri: featuredPortfolioImage.imageUrl }} style={styles.detailImage} />
+                    <Image source={{ uri: featuredPortfolioImage.imageUrl }} style={styles.detailImage} resizeMode="cover" />
                   </Pressable>
                   {orderedPortfolio.length > 1 ? (
                     <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.thumbnailStrip}>
@@ -1181,7 +1167,7 @@ export default function Index() {
                             index === activeDetailImageIndex ? styles.thumbnailWrapActive : undefined,
                           ]}
                         >
-                          <Image source={{ uri: item.imageUrl }} style={styles.thumbnailImage} />
+                          <Image source={{ uri: item.imageUrl }} style={styles.thumbnailImage} resizeMode="cover" />
                         </Pressable>
                       ))}
                     </ScrollView>
@@ -1365,7 +1351,7 @@ export default function Index() {
                   value={themeMode}
                   onChange={mode => {
                     setThemeMode(mode);
-                    void saveThemePreference(mode);
+                    void saveThemePreference(mode, session?.user.id);
                   }}
                 />
               </MotionCard>
@@ -2049,7 +2035,7 @@ function PortfolioGallerySection(props: { title: string; subtitle: string; items
   const [activeIndex, setActiveIndex] = React.useState(0);
   const scrollX = React.useRef(new Animated.Value(0)).current;
   const carouselRef = React.useRef<ScrollView>(null);
-  const screenWidth = Dimensions.get('window').width;
+  const { width: screenWidth } = useWindowDimensions();
   const cardWidth = Math.min(screenWidth - 48, 720);
 
   React.useEffect(() => {
@@ -2092,7 +2078,7 @@ function PortfolioGallerySection(props: { title: string; subtitle: string; items
         >
           {props.items.map(item => (
             <View key={item.id} style={{ width: cardWidth }}>
-              <Image source={{ uri: item.imageUrl }} style={[styles.galleryCarouselImage, { width: cardWidth }]} />
+              <Image source={{ uri: item.imageUrl }} style={[styles.galleryCarouselImage, { width: cardWidth }]} resizeMode="cover" />
             </View>
           ))}
         </Animated.ScrollView>
@@ -2130,7 +2116,7 @@ function PortfolioGallerySection(props: { title: string; subtitle: string; items
                   index === activeIndex ? styles.thumbnailWrapActive : undefined,
                 ]}
               >
-                <Image source={{ uri: item.imageUrl }} style={styles.thumbnailImage} />
+                <Image source={{ uri: item.imageUrl }} style={styles.thumbnailImage} resizeMode="cover" />
               </Pressable>
             ))}
           </ScrollView>
@@ -2161,7 +2147,7 @@ function VendorPortfolioSection(props: {
       </ButtonRow>
       {props.uploads.map(item => (
         <MotionCard key={item.id}>
-          <Image source={{ uri: item.uri }} style={styles.galleryImage} />
+          <Image source={{ uri: item.uri }} style={styles.galleryImage} resizeMode="cover" />
           <View style={styles.portfolioMetaRow}>
             {item.isPrimary ? <StatusPill label="Signature showcase" /> : <GhostButton label="Set signature" onPress={() => props.onSetDraftPrimary(item.id)} />}
             <GhostButton label="Remove" onPress={() => props.onRemoveDraft(item.id)} />
@@ -2178,7 +2164,7 @@ function VendorPortfolioSection(props: {
       ))}
       {props.portfolio.map(item => (
         <MotionCard key={item.id}>
-          <Image source={{ uri: item.imageUrl }} style={styles.galleryImage} />
+          <Image source={{ uri: item.imageUrl }} style={styles.galleryImage} resizeMode="cover" />
           <View style={styles.portfolioMetaRow}>
             {item.caption ? <Text style={[styles.cardTitle, typeScale.cardTitle, { color: theme.text }]}>{item.caption}</Text> : null}
             {item.isPrimary ? <StatusPill label="Signature showcase" /> : <GhostButton label="Set signature" onPress={() => props.onMakePrimary(item.id)} />}
@@ -2190,6 +2176,83 @@ function VendorPortfolioSection(props: {
     </>
   );
 }
+function TierCardItem(props: {
+  tier: MenuTier;
+  index: number;
+  allTiers: MenuTier[];
+  onUpdate: (index: number, patch: Partial<MenuTier>) => void;
+  onRemove: (index: number) => void;
+}) {
+  const theme = useThemeTokens();
+  const [itemsText, setItemsText] = React.useState(() => (props.tier.items || []).join('\n'));
+
+  React.useEffect(() => {
+    const joined = (props.tier.items || []).join('\n');
+    const currentClean = itemsText
+      .split('\n')
+      .map(s => s.trim())
+      .filter(Boolean)
+      .join('\n');
+    if (joined !== currentClean && (props.tier.items || []).length > 0) {
+      setItemsText(joined);
+    }
+  }, [props.tier.items]);
+
+  const handleItemsChange = (text: string) => {
+    setItemsText(text);
+    const parsed = text
+      .split('\n')
+      .map(line => line.trim())
+      .filter(Boolean);
+    props.onUpdate(props.index, { items: parsed });
+  };
+
+  const tierItems = getTierPreviewItems(props.allTiers, props.index);
+
+  return (
+    <MotionCard key={`tier-${props.index}`}>
+      <View style={styles.portfolioMetaRow}>
+        <Text style={[styles.cardTitle, typeScale.cardTitle, { color: theme.text }]}>
+          {props.tier.name || `Service Tier #${props.index + 1}`}
+        </Text>
+        <GhostButton label="Remove" onPress={() => props.onRemove(props.index)} />
+      </View>
+      <Field
+        label="Tier name"
+        value={props.tier.name}
+        onChangeText={value => props.onUpdate(props.index, { name: value })}
+        hint="E.g. Plated 3-Course, Signature Buffet, Cocktail Canapés, Farm-to-Table, VIP Experience."
+      />
+      <Field
+        label="Price per cover (Pax)"
+        value={props.tier.pricePerHead ? String(props.tier.pricePerHead) : ''}
+        onChangeText={value =>
+          props.onUpdate(props.index, { pricePerHead: Number(value.replace(/[^0-9.]/g, '')) || 0 })
+        }
+        hint="Set the per-cover rate for this bespoke menu package."
+        keyboardType="numeric"
+      />
+      <Field
+        label="Menu courses & inclusions"
+        value={itemsText}
+        onChangeText={handleItemsChange}
+        hint="One course or service spec per line. Press Enter for each new course."
+        multiline
+      />
+      {tierItems.length ? (
+        <View style={styles.settingsList}>
+          <Text style={[styles.settingLabel, { color: theme.textMuted }]}>Client sees</Text>
+          <View style={styles.tagRow}>
+            {tierItems.map(item => (
+              <StatusPill key={`${props.tier.name || props.index}-${item}`} label={item} muted />
+            ))}
+          </View>
+        </View>
+      ) : null}
+    </MotionCard>
+  );
+}
+
 function TierEditorSection(props: {
   tiers: MenuTier[];
   onAdd: () => void;
@@ -2199,49 +2262,31 @@ function TierEditorSection(props: {
   const theme = useThemeTokens();
   return (
     <>
-      <SectionHeader title="Bespoke service tiers" subtitle="Each service tier is fully independent — specify all courses, stations, and staffing inclusions for every package." />
+      <SectionHeader
+        title="Bespoke service tiers"
+        subtitle="Define your custom service packages, bespoke menus, and per-cover pricing with complete freedom."
+      />
       <ButtonRow>
         <SecondaryButton label="Add service tier" onPress={props.onAdd} />
       </ButtonRow>
-      {props.tiers.map((tier, index) => {
-        const tierItems = getTierPreviewItems(props.tiers, index);
-        return (
-          <MotionCard key={`${tier.name}-${index}`}>
-            <View style={styles.portfolioMetaRow}>
-              <Text style={[styles.cardTitle, typeScale.cardTitle, { color: theme.text }]}>{tier.name}</Text>
-              <GhostButton label="Remove" onPress={() => props.onRemove(index)} />
-            </View>
-            <Field
-              label="Tier name"
-              value={tier.name}
-              onChangeText={value => props.onUpdate(index, { name: value })}
-              hint="Standard, Premium, and Deluxe are strong defaults, but you can rename them."
-            />
-            <Field
-              label="Price per cover (Pax)"
-              value={String(tier.pricePerHead)}
-              onChangeText={value => props.onUpdate(index, { pricePerHead: Number(value.replace(/[^0-9.]/g, '')) || 0 })}
-              hint="Set the per-cover rate for this bespoke menu package."
-              keyboardType="numeric"
-            />
-            <Field
-              label="Menu courses & inclusions"
-              value={tier.items.join('\n')}
-              onChangeText={value => props.onUpdate(index, { items: value.split('\n').map(item => item.trim()).filter(Boolean) })}
-              hint="One course or service spec per line. Enter the complete culinary offering included in this tier."
-              multiline
-            />
-            <View style={styles.settingsList}>
-              <Text style={[styles.settingLabel, { color: theme.textMuted }]}>Client sees</Text>
-              <View style={styles.tagRow}>
-                {tierItems.map(item => (
-                  <StatusPill key={`${tier.name}-${item}`} label={item} muted />
-                ))}
-              </View>
-            </View>
-          </MotionCard>
-        );
-      })}
+      {!props.tiers.length ? (
+        <MotionCard>
+          <Text style={[styles.cardTitle, typeScale.cardTitle, { color: theme.text }]}>No service tiers added yet</Text>
+          <Text style={[styles.bodyText, typeScale.body, { color: theme.textMuted }]}>
+            Click &quot;Add service tier&quot; above to create your custom menu packages with your own names, pricing, and inclusions.
+          </Text>
+        </MotionCard>
+      ) : null}
+      {props.tiers.map((tier, index) => (
+        <TierCardItem
+          key={`tier-${index}`}
+          tier={tier}
+          index={index}
+          allTiers={props.tiers}
+          onUpdate={props.onUpdate}
+          onRemove={props.onRemove}
+        />
+      ))}
     </>
   );
 }
@@ -2390,20 +2435,30 @@ const styles = StyleSheet.create({
   },
   cardImage: {
     width: '100%',
-    height: 200,
+    aspectRatio: 16 / 9,
+    minHeight: 180,
+    maxHeight: 280,
     borderRadius: radius.md,
+    resizeMode: 'cover',
   },
   galleryImage: {
     width: '100%',
-    height: 240,
+    aspectRatio: 16 / 9,
+    minHeight: 240,
+    maxHeight: 440,
     borderRadius: radius.md,
+    resizeMode: 'cover',
   },
   galleryCard: {
     gap: spacing.md,
   },
   galleryCarouselImage: {
-    height: 300,
+    width: '100%',
+    aspectRatio: 16 / 10,
+    minHeight: 280,
+    maxHeight: 480,
     borderRadius: radius.lg,
+    resizeMode: 'cover',
   },
   galleryDots: {
     flexDirection: 'row',
@@ -2434,18 +2489,22 @@ const styles = StyleSheet.create({
     borderColor: palette.gold500,
   },
   thumbnailImage: {
-    width: 72,
-    height: 56,
+    width: 80,
+    height: 60,
     borderRadius: radius.md,
+    resizeMode: 'cover',
   },
   detailImageSection: {
     gap: spacing.sm,
   },
   detailImage: {
     width: '100%',
-    height: 280,
+    aspectRatio: 16 / 9,
+    minHeight: 280,
+    maxHeight: 480,
     borderRadius: radius.lg,
     marginTop: spacing.md,
+    resizeMode: 'cover',
   },
   cardTitle: {
     fontFamily: fonts.heading,

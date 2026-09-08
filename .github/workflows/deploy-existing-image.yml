@@ -1,0 +1,116 @@
+name: "Deploy Existing Image"
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        default: "dev"
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+      target_slot:
+        description: "Deployment slot to target (blue / green)"
+        required: true
+        default: "blue"
+        type: choice
+        options:
+          - blue
+          - green
+      image_tag:
+        description: "Immutable ECR image tag (Git SHA) to deploy"
+        required: true
+        type: string
+
+concurrency:
+  group: munch-deploy-${{ github.workflow }}-${{ github.event.inputs.environment }}-${{ github.event.inputs.target_slot }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  ECR_REGISTRY: 554013701313.dkr.ecr.eu-west-1.amazonaws.com
+
+jobs:
+  deploy:
+    name: Operational Image Deploy / Rollback
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate Image Tag Input
+        run: |
+          if [ -z "${{ github.event.inputs.image_tag }}" ]; then
+            echo "Error: image_tag cannot be empty."
+            exit 1
+          fi
+          echo "Target Environment: ${{ github.event.inputs.environment }}"
+          echo "Target Slot: ${{ github.event.inputs.target_slot }}"
+          echo "Image Tag: ${{ github.event.inputs.image_tag }}"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          audience: sts.amazonaws.com
+
+      - name: Update SSM Slot Image Tag
+        env:
+          SSM_PREFIX: ${{ vars.SSM_PARAMETER_PREFIX || '/munch-catering/dev' }}
+          TARGET_SLOT: ${{ github.event.inputs.target_slot }}
+          IMAGE_TAG: ${{ github.event.inputs.image_tag }}
+          AWS_REGION: ${{ vars.AWS_REGION }}
+        run: |
+          echo "Updating parameter $SSM_PREFIX/deploy/$TARGET_SLOT/image_tag..."
+          aws ssm put-parameter \
+            --name "$SSM_PREFIX/deploy/$TARGET_SLOT/image_tag" \
+            --value "$IMAGE_TAG" \
+            --type "String" \
+            --overwrite \
+            --region "$AWS_REGION"
+
+      - name: Trigger Rolling Update via SSM
+        env:
+          APP_DIR: ${{ vars.APP_DIR || '/opt/munch-catering' }}
+          TARGET_SLOT: ${{ github.event.inputs.target_slot }}
+          IMAGE_TAG: ${{ github.event.inputs.image_tag }}
+          ECR_REGISTRY: ${{ env.ECR_REGISTRY }}
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          ASG_NAME: ${{ vars.ASG_NAME }}
+          EC2_INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
+        run: |
+          if [ -n "${ASG_NAME:-}" ]; then
+            TARGET_ARGS=(--targets "Key=tag:Slot,Values=$TARGET_SLOT")
+          else
+            TARGET_ARGS=(--instance-ids "$EC2_INSTANCE_ID")
+          fi
+
+          command_id=$(aws ssm send-command \
+            "${TARGET_ARGS[@]}" \
+            --document-name "AWS-RunShellScript" \
+            --comment "Deploy Existing Tag ${IMAGE_TAG} to Slot ${TARGET_SLOT}" \
+            --timeout-seconds 600 \
+            --parameters commands="[
+              \"set -eu\",
+              \"cd $APP_DIR\",
+              \"sed -i 's/^IMAGE_TAG=.*/IMAGE_TAG=$IMAGE_TAG/' .env || echo 'IMAGE_TAG=$IMAGE_TAG' >> .env\",
+              \"aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ECR_REGISTRY\",
+              \"docker compose pull\",
+              \"docker compose up -d\",
+              \"docker compose ps\"
+            ]" \
+            --query "Command.CommandId" \
+            --output text)
+
+          echo "Dispatched SSM Command: $command_id"
+          sleep 10
+          aws ssm list-command-invocations --command-id "$command_id" --details --region "$AWS_REGION" || true

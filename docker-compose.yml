@@ -1,6 +1,6 @@
 services:
   frontend:
-    image: ${ECR_REGISTRY:-}/munch-catering-frontend:${IMAGE_TAG:-latest}
+    image: ${ECR_REGISTRY:?ECR_REGISTRY is required}/munch-catering-frontend:${IMAGE_TAG:?IMAGE_TAG is required}
     build:
       context: ./munch-catering-frontend-expo
       args:
@@ -15,12 +15,12 @@ services:
     restart: unless-stopped
 
   backend:
-    image: ${ECR_REGISTRY:-}/munch-catering-backend:${IMAGE_TAG:-latest}
+    image: ${ECR_REGISTRY:?ECR_REGISTRY is required}/munch-catering-backend:${IMAGE_TAG:?IMAGE_TAG is required}
     build:
       context: ./munch_catering_backend
     environment:
       APP_ENV: ${APP_ENV:-dev}
-      MONGO_URI: ${MONGO_URI:-mongodb://mongo:27017}
+      MONGO_URI: ${MONGO_URI:-mongodb://localhost:27017}
       DB_NAME: ${DB_NAME:-munch_catering}
       SECRET_KEY: ${SECRET_KEY:-change-me-in-production}
       ALGORITHM: ${ALGORITHM:-HS256}
@@ -36,29 +36,12 @@ services:
       MPESA_PASSKEY: ${MPESA_PASSKEY:-}
       MPESA_SHORTCODE: ${MPESA_SHORTCODE:-}
       MPESA_CALLBACK_URL: ${MPESA_CALLBACK_URL:-http://localhost/api/mpesa/callback}
-    volumes:
-      - portfolio_images:/app/portfolio_images
-    depends_on:
-      - mongo
+      S3_BUCKET_NAME: ${S3_BUCKET_NAME:-}
+      AWS_REGION: ${AWS_REGION:-eu-west-1}
     networks:
       - app
-      - data
     restart: unless-stopped
-
-  mongo:
-    image: mongo:7.0
-    command: ["mongod", "--quiet"]
-    volumes:
-      - mongo_data:/data/db
-    networks:
-      - data
-    restart: unless-stopped
-
-volumes:
-  mongo_data:
-  portfolio_images:
 
 networks:
   web:
   app:
-  data:
