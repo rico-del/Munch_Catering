@@ -6,7 +6,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 RUN addgroup -S munch && adduser -S munch -G munch
-
+# Upgrade OS packages (e.g. util-linux CVE-2026-*) — base image ships stale versions
+RUN apk upgrade --no-cache
 RUN apk add --no-cache --virtual .build-deps gcc musl-dev libffi-dev
 
 COPY requirements.txt .
