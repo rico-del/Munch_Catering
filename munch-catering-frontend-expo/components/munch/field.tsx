@@ -3,6 +3,7 @@ import { StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { useThemeTokens } from '@/lib/theme-context';
 import { palette, radius, spacing } from '@/lib/munch-data';
+import { fonts } from '@/lib/typography';
 
 export function Field(props: {
   label: string;
@@ -42,10 +43,12 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   fieldLabel: {
+    fontFamily: fonts.body,
     color: palette.ink950,
     fontWeight: '700',
   },
   fieldInput: {
+    fontFamily: fonts.body,
     backgroundColor: '#F8FBFA',
     borderRadius: radius.md,
     borderWidth: 1,
@@ -60,6 +63,7 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top',
   },
   fieldHint: {
+    fontFamily: fonts.body,
     color: palette.slate500,
     fontSize: 12,
   },

@@ -19,6 +19,9 @@ class Settings:
         self.DB_NAME = os.getenv("DB_NAME", "munch_catering")
         self.PROJECT_ROOT = PROJECT_ROOT
         self.PORTFOLIO_DIR = PROJECT_ROOT / "portfolio_images"
+        self.S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME", "").strip()
+        self.AWS_REGION = os.getenv("AWS_REGION", "eu-west-1").strip()
+        self.USE_S3_STORAGE = self._as_bool(os.getenv("USE_S3_STORAGE", "true" if self.S3_BUCKET_NAME else "false"))
         self.CORS_ORIGINS = self._split_csv(
             os.getenv(
                 "CORS_ORIGINS",
@@ -67,6 +70,11 @@ class Settings:
 
         if self.SECRET_KEY == "change-me-in-production" and not self.is_development:
             raise RuntimeError("Refusing to start with insecure default SECRET_KEY outside development.")
+
+        if not self.is_development:
+            raw_uri = (self.MONGO_URI or "").strip().lower()
+            if not raw_uri or raw_uri.startswith("mongodb://localhost") or raw_uri.startswith("mongodb://127.0.0.1") or raw_uri == "mongodb://mongo:27017":
+                raise RuntimeError("External MONGO_URI (e.g. MongoDB Atlas) must be configured in production environments. Local MongoDB fallback is refused.")
 
         if self.DEFAULT_PAGE_SIZE < 1 or self.MAX_PAGE_SIZE < self.DEFAULT_PAGE_SIZE:
             raise RuntimeError("Pagination settings are invalid.")

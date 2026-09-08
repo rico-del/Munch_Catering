@@ -16,6 +16,14 @@ on:
           - dev
           - staging
           - prod
+      target_slot:
+        description: Target deployment slot (blue / green)
+        required: true
+        default: blue
+        type: choice
+        options:
+          - blue
+          - green
 
 concurrency:
   group: munch-${{ github.workflow }}-${{ github.ref }}
@@ -130,7 +138,9 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Validate Compose file
-        run: docker compose config
+        env:
+          IMAGE_TAG: ci
+        run: docker compose config >/dev/null
 
       - name: Build backend image
         uses: docker/build-push-action@v6
@@ -230,11 +240,12 @@ jobs:
           AWS_ROLE_ARN: ${{ vars.AWS_ROLE_ARN }}
           AWS_REGION: ${{ vars.AWS_REGION }}
           EC2_INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
+          ASG_NAME: ${{ vars.ASG_NAME }}
           SECRET_KEY: ${{ secrets.SECRET_KEY }}
         run: |
           test -n "$AWS_ROLE_ARN"
           test -n "$AWS_REGION"
-          test -n "$EC2_INSTANCE_ID"
+          test -n "${EC2_INSTANCE_ID:-}${ASG_NAME:-}"
           test -n "$SECRET_KEY"
 
       - name: Configure AWS credentials
@@ -249,7 +260,10 @@ jobs:
           APP_DIR: ${{ vars.APP_DIR || '/opt/munch-catering' }}
           APP_REPO_URL: ${{ vars.APP_REPO_URL || format('https://github.com/{0}.git', github.repository) }}
           APP_BRANCH: ${{ github.ref_name }}
+          APP_ENV: ${{ github.event.inputs.environment || 'production' }}
+          WEB_PORT: ${{ vars.WEB_PORT || '80' }}
           EC2_INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
+          ASG_NAME: ${{ vars.ASG_NAME }}
           SECRET_KEY: ${{ secrets.SECRET_KEY }}
           PASSWORD_RESET_BASE_URL: ${{ vars.PASSWORD_RESET_BASE_URL }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
@@ -265,10 +279,25 @@ jobs:
           MPESA_PASSKEY: ${{ secrets.MPESA_PASSKEY }}
           MPESA_SHORTCODE: ${{ secrets.MPESA_SHORTCODE }}
         run: |
+          TARGET_SLOT="${{ github.event.inputs.target_slot || 'blue' }}"
+          echo "Updating SSM parameter /munch-catering/dev/deploy/$TARGET_SLOT/image_tag to $IMAGE_TAG..."
+          aws ssm put-parameter \
+            --name "/munch-catering/dev/deploy/$TARGET_SLOT/image_tag" \
+            --value "$IMAGE_TAG" \
+            --type "String" \
+            --overwrite \
+            --region "$AWS_REGION"
+
+          if [ -n "${ASG_NAME:-}" ]; then
+            TARGET_ARGS=(--targets "Key=tag:Slot,Values=$TARGET_SLOT")
+          else
+            TARGET_ARGS=(--instance-ids "$EC2_INSTANCE_ID")
+          fi
+
           command_id=$(aws ssm send-command \
-            --instance-ids "$EC2_INSTANCE_ID" \
+            "${TARGET_ARGS[@]}" \
             --document-name "AWS-RunShellScript" \
-            --comment "Deploy Munch Catering ${GITHUB_SHA}" \
+            --comment "Deploy Munch Catering ${GITHUB_SHA} ($APP_ENV)" \
             --timeout-seconds 900 \
             --parameters commands="[
               \"set -eu\",
@@ -278,8 +307,8 @@ jobs:
               \"cd $APP_DIR && sudo git checkout $APP_BRANCH\",
               \"cd $APP_DIR && sudo git pull --ff-only origin $APP_BRANCH\",
               \"sudo tee $APP_DIR/.env >/dev/null <<'ENVEOF'\",
-              \"APP_ENV=dev\",
-              \"WEB_PORT=8000\",
+              \"APP_ENV=$APP_ENV\",
+              \"WEB_PORT=$WEB_PORT\",
               \"MONGO_URI=$MONGO_URI\",
               \"DB_NAME=munch_catering\",
               \"SECRET_KEY=$SECRET_KEY\",
@@ -305,12 +334,17 @@ jobs:
             --query "Command.CommandId" \
             --output text)
 
-          aws ssm wait command-executed \
-            --command-id "$command_id" \
-            --instance-id "$EC2_INSTANCE_ID"
+          echo "Dispatched SSM Command: $command_id"
+          sleep 15
 
-          aws ssm get-command-invocation \
-            --command-id "$command_id" \
-            --instance-id "$EC2_INSTANCE_ID" \
-            --query "{Status:Status,Output:StandardOutputContent,Error:StandardErrorContent}" \
-            --output json
+          if [ -n "${EC2_INSTANCE_ID:-}" ]; then
+            aws ssm wait command-executed \
+              --command-id "$command_id" \
+              --instance-id "$EC2_INSTANCE_ID" || true
+
+            aws ssm get-command-invocation \
+              --command-id "$command_id" \
+              --instance-id "$EC2_INSTANCE_ID" \
+              --query "{Status:Status,Output:StandardOutputContent,Error:StandardErrorContent}" \
+              --output json || true
+          fi

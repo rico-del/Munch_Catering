@@ -2,15 +2,18 @@ import React from 'react';
 import {
   Alert,
   Animated,
+  Dimensions,
   Easing,
   Image,
   Platform,
   Pressable,
   SafeAreaView,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -29,12 +32,12 @@ import {
   getBookingStatusTone,
   getTierPreviewItems,
   resolvePrimaryPortfolioItem,
-  toCumulativeTiers,
-  toIncrementalTiers,
+  toIndependentTiers,
   toSentenceCase,
   uniqueItems,
 } from '@/lib/munch-helpers';
 import { clearSession, loadSession, loadThemePreference, saveSession, saveThemePreference } from '@/lib/session';
+import { fonts, typeScale } from '@/lib/typography';
 import { ThemeContext, darkTheme, lightTheme, useThemeTokens } from '@/lib/theme-context';
 import {
   Booking,
@@ -93,13 +96,6 @@ const emptyStats: VendorStats = {
   inquiryConversionRate: 0,
 };
 
-const tierBlueprints: MenuTier[] = [
-  { name: 'Standard', pricePerHead: 2200, items: ['Buffet service', '2 mains', '2 sides', 'Service team', 'Basic table setup'] },
-  { name: 'Premium', pricePerHead: 3600, items: ['Signature welcome bites', 'Dessert bar', 'Enhanced tablescape', 'Menu consultation'] },
-  { name: 'Deluxe', pricePerHead: 5200, items: ['Live stations', 'Custom plating', 'Lead event captain', 'Late service extension'] },
-];
-const starterTiers: MenuTier[] = tierBlueprints;
-
 const defaultCatererDraft: CatererProfileDraft = {
   businessName: '',
   description: '',
@@ -107,7 +103,7 @@ const defaultCatererDraft: CatererProfileDraft = {
   location: '',
   heroTagline: '',
   cuisines: [],
-  tiers: starterTiers,
+  tiers: [],
 };
 
 const serviceAuthMessage = 'Sign in or create an account to request quotes, book caterers, message vendors, and manage your event details.';
@@ -155,7 +151,7 @@ export default function Index() {
   const [error, setError] = React.useState<string | null>(null);
   const [themeMode, setThemeMode] = React.useState<ThemeMode>('light');
   const [session, setSession] = React.useState<Session | null>(null);
-  const [route, setRoute] = React.useState<AppRoute>({ name: 'auth', screen: 'welcome' });
+  const [route, setRoute] = React.useState<AppRoute>({ name: 'customer' });
   const [customerTab, setCustomerTab] = React.useState<CustomerTab>('home');
   const [vendorTab, setVendorTab] = React.useState<VendorTab>('dashboard');
   const [caterers, setCaterers] = React.useState<CatererCardData[]>([]);
@@ -168,6 +164,7 @@ export default function Index() {
   const [vendorStats, setVendorStats] = React.useState<VendorStats>(emptyStats);
   const [myCatererProfile, setMyCatererProfile] = React.useState<CatererProfile | null>(null);
   const [uploadDrafts, setUploadDrafts] = React.useState<UploadDraft[]>([]);
+  const [activeDetailImageIndex, setActiveDetailImageIndex] = React.useState(0);
   const [search, setSearch] = React.useState('');
   const [loginDraft, setLoginDraft] = React.useState<LoginDraft>({ email: '', password: '' });
   const [passwordResetDraft, setPasswordResetDraft] = React.useState<PasswordResetDraft>({ email: '', token: '', newPassword: '' });
@@ -177,32 +174,27 @@ export default function Index() {
   const [quoteDraft, setQuoteDraft] = React.useState({ description: '', guestCount: '80', budgetEstimate: '250000' });
   const [checkoutDraft, setCheckoutDraft] = React.useState({ customerPhone: '0712345678', guestCount: '120' });
   const [messageDraft, setMessageDraft] = React.useState('');
+  const pendingPostAuthAction = React.useRef<(() => void) | null>(null);
 
   React.useEffect(() => {
     let mounted = true;
 
     async function bootstrap() {
       try {
-        const storedTheme = await loadThemePreference();
-        if (mounted) {
-          setThemeMode(storedTheme);
-        }
-        const resetParams = getInitialPasswordResetParams();
-        if (resetParams) {
-          if (mounted) {
-            setPasswordResetDraft(current => ({ ...current, ...resetParams }));
-            setRoute({ name: 'auth', screen: 'reset-password' });
-          }
-          return;
-        }
         const stored = await loadSession();
         if (!stored) {
+          const storedTheme = await loadThemePreference();
           if (mounted) {
+            setThemeMode(storedTheme);
             setCustomerTab('home');
             setRoute({ name: 'customer' });
-            const catererPayload = await api.getCaterers();
-            if (mounted) {
-              setCaterers(catererPayload.items);
+            try {
+              const catererPayload = await api.getCaterers();
+              if (mounted) {
+                setCaterers(catererPayload.items);
+              }
+            } catch {
+              // Silently stay on customer dashboard
             }
           }
           return;
@@ -210,6 +202,8 @@ export default function Index() {
 
         const user = await api.getMe(stored.token);
         if (!mounted) return;
+        const userTheme = await loadThemePreference(user.id);
+        setThemeMode(userTheme);
         setSession({ token: stored.token, user });
         setProfileDraft({ fullName: user.fullName, username: user.username });
         if (user.role === 'caterer') {
@@ -221,6 +215,7 @@ export default function Index() {
         await clearSession();
         if (mounted) {
           setSession(null);
+          setThemeMode('light');
           setCustomerTab('home');
           setRoute({ name: 'customer' });
           try {
@@ -229,7 +224,7 @@ export default function Index() {
               setCaterers(catererPayload.items);
             }
           } catch {
-            setRoute({ name: 'auth', screen: 'login' });
+            // Keep customer on home dashboard
           }
         }
       } finally {
@@ -295,7 +290,7 @@ export default function Index() {
         location: profile.location || '',
         heroTagline: profile.heroTagline,
         cuisines: profile.cuisines,
-        tiers: profile.tiers.length ? toIncrementalTiers(profile.tiers) : starterTiers,
+        tiers: profile.tiers.length ? toIndependentTiers(profile.tiers) : [],
       });
     } catch (err) {
       setMyCatererProfile(null);
@@ -336,6 +331,8 @@ export default function Index() {
   const signOut = React.useCallback(async () => {
     await clearSession();
     setSession(null);
+    pendingPostAuthAction.current = null;
+    setThemeMode('light');
     setActiveCaterer(null);
     setActiveBooking(null);
     setMessages([]);
@@ -357,7 +354,13 @@ export default function Index() {
     await saveSession(nextSession);
     setSession(nextSession);
     setProfileDraft({ fullName: nextSession.user.fullName, username: nextSession.user.username });
-    if (nextSession.user.role === 'caterer') {
+    const userTheme = await loadThemePreference(nextSession.user.id);
+    setThemeMode(userTheme);
+    if (pendingPostAuthAction.current) {
+      const action = pendingPostAuthAction.current;
+      pendingPostAuthAction.current = null;
+      action();
+    } else if (nextSession.user.role === 'caterer') {
       setRoute({ name: 'vendor' });
     } else {
       setRoute({ name: 'customer' });
@@ -385,6 +388,7 @@ export default function Index() {
   const requireCustomerSession = React.useCallback(
     (next: () => void, message?: string) => {
       if (!session) {
+        pendingPostAuthAction.current = next;
         promptForLogin(message);
         return;
       }
@@ -542,6 +546,7 @@ export default function Index() {
     async (catererId: string) => {
       setBusy(true);
       setError(null);
+      setActiveDetailImageIndex(0);
       try {
         const profile = await api.getCatererDetail(catererId);
         setActiveCaterer(profile);
@@ -717,7 +722,7 @@ export default function Index() {
     try {
       const profile = await api.updateMyCatererProfile(session.token, {
         ...catererDraft,
-        tiers: toCumulativeTiers(catererDraft.tiers),
+        tiers: toIndependentTiers(catererDraft.tiers),
       });
       setMyCatererProfile(profile);
       setCatererDraft({
@@ -727,7 +732,7 @@ export default function Index() {
         location: profile.location || '',
         heroTagline: profile.heroTagline,
         cuisines: profile.cuisines,
-        tiers: profile.tiers.length ? toIncrementalTiers(profile.tiers) : starterTiers,
+        tiers: profile.tiers.length ? toIndependentTiers(profile.tiers) : [],
       });
       await refreshAll();
       Alert.alert('Brand profile updated', 'Your public caterer profile is now live.');
@@ -785,19 +790,17 @@ export default function Index() {
   }, [handleApiError, session, signOut]);
 
   const addCatererTier = React.useCallback(() => {
-    setCatererDraft(current => {
-      const usedNames = new Set(current.tiers.map(item => item.name));
-      const nextTemplate =
-        tierBlueprints.find(item => !usedNames.has(item.name)) || {
-          name: `Tier ${current.tiers.length + 1}`,
-          pricePerHead: (current.tiers.at(-1)?.pricePerHead || 2200) + 800,
-          items: ['Tailored service upgrade'],
-        };
-      return {
-        ...current,
-        tiers: [...current.tiers, { ...nextTemplate, items: [...nextTemplate.items] }],
-      };
-    });
+    setCatererDraft(current => ({
+      ...current,
+      tiers: [
+        ...current.tiers,
+        {
+          name: '',
+          pricePerHead: 0,
+          items: [],
+        },
+      ],
+    }));
   }, []);
 
   const updateCatererTier = React.useCallback((index: number, patch: Partial<MenuTier>) => {
@@ -806,26 +809,20 @@ export default function Index() {
       tiers: current.tiers.map((tier, tierIndex) =>
         tierIndex === index
           ? {
-              ...tier,
-              ...patch,
-              items: patch.items ? uniqueItems(patch.items) : tier.items,
-            }
+            ...tier,
+            ...patch,
+            items: patch.items ? uniqueItems(patch.items) : tier.items,
+          }
           : tier,
       ),
     }));
   }, []);
 
   const removeCatererTier = React.useCallback((index: number) => {
-    setCatererDraft(current => {
-      if (current.tiers.length <= 1) {
-        Alert.alert('Keep one tier', 'A caterer profile needs at least one package tier.');
-        return current;
-      }
-      return {
-        ...current,
-        tiers: current.tiers.filter((_, tierIndex) => tierIndex !== index),
-      };
-    });
+    setCatererDraft(current => ({
+      ...current,
+      tiers: current.tiers.filter((_, tierIndex) => tierIndex !== index),
+    }));
   }, []);
 
   const pickPortfolioImage = React.useCallback(async () => {
@@ -948,9 +945,9 @@ export default function Index() {
               setMyCatererProfile(current =>
                 current
                   ? {
-                      ...current,
-                      portfolio: current.portfolio.filter(item => item.id !== imageId),
-                    }
+                    ...current,
+                    portfolio: current.portfolio.filter(item => item.id !== imageId),
+                  }
                   : current,
               );
               await refreshAll();
@@ -1054,10 +1051,11 @@ export default function Index() {
       : null;
   const activeApprovedQuote =
     route.name === 'checkout' && route.quoteId ? quotes.find(item => item.id === route.quoteId) || null : null;
-  const featuredPortfolioImage = resolvedCaterer ? resolvePrimaryPortfolioItem(resolvedCaterer.portfolio) : null;
   const orderedPortfolio = resolvedCaterer
     ? [...resolvedCaterer.portfolio].sort((left, right) => Number(right.isPrimary) - Number(left.isPrimary))
-      : [];
+    : [];
+  const featuredPortfolioImage =
+    orderedPortfolio[activeDetailImageIndex] || (resolvedCaterer ? resolvePrimaryPortfolioItem(resolvedCaterer.portfolio) : null);
   const orderedMyPortfolio = myCatererProfile ? [...myCatererProfile.portfolio].sort((left, right) => Number(right.isPrimary) - Number(left.isPrimary)) : [];
   const actionableBookings = bookings.filter(item => item.lifecycleStage === 'awaiting_payment');
   const confirmedBookings = bookings.filter(item => item.lifecycleStage === 'confirmed');
@@ -1071,32 +1069,32 @@ export default function Index() {
     <ThemeContext.Provider value={theme}>
       <SafeAreaView style={[styles.page, { backgroundColor: theme.page }]}>
         <View style={styles.appChrome}>
-        <Header
-          title={
-            route.name === 'auth'
-              ? 'Munch'
-              : route.name === 'chat'
-                ? route.contactName
-                : route.name === 'settings'
-                  ? 'Settings'
-                  : route.name === 'booking-detail'
-                    ? 'Booking'
-                    : route.name === 'gallery'
-                      ? 'Gallery'
-                      : route.name === 'quote-request'
-                        ? 'Quote request'
-                        : route.name === 'checkout'
-                          ? 'Checkout'
-                          : session?.user.role === 'caterer'
-                            ? 'Vendor view'
-                            : 'Munch'
-          }
-          onBack={
-            route.name === 'auth'
-              ? undefined
-              : route.name === 'customer' || route.name === 'vendor'
+          <Header
+            title={
+              route.name === 'auth'
+                ? 'Munch'
+                : route.name === 'chat'
+                  ? route.contactName
+                  : route.name === 'settings'
+                    ? 'Settings'
+                    : route.name === 'booking-detail'
+                      ? 'Banquet Order'
+                      : route.name === 'gallery'
+                        ? 'Tasting Gallery'
+                        : route.name === 'quote-request'
+                          ? 'Bespoke Proposal'
+                          : route.name === 'checkout'
+                            ? 'Date Reservation'
+                            : session?.user.role === 'caterer'
+                              ? 'Culinary Dispatch'
+                              : 'Munch'
+            }
+            onBack={
+              route.name === 'auth'
                 ? undefined
-                : () => {
+                : route.name === 'customer' || route.name === 'vendor'
+                  ? undefined
+                  : () => {
                     if (route.name === 'gallery' && resolvedCaterer) {
                       setRoute({ name: 'caterer-detail', catererId: resolvedCaterer.id });
                       return;
@@ -1111,544 +1109,575 @@ export default function Index() {
                       setRoute({ name: 'customer' });
                     }
                   }
-          }
-        />
-
-        {error ? <InlineError message={error} onDismiss={() => setError(null)} /> : null}
-        {busy ? <BusyStripe /> : null}
-
-        {route.name === 'auth' ? (
-          <AuthFlow
-            screen={route.screen}
-            loginDraft={loginDraft}
-            passwordResetDraft={passwordResetDraft}
-            signupDraft={signupDraft}
-            busy={busy}
-            onNavigate={navigateAuth}
-            onChangeLogin={patch => setLoginDraft(current => ({ ...current, ...patch }))}
-            onChangePasswordReset={patch => setPasswordResetDraft(current => ({ ...current, ...patch }))}
-            onChangeSignup={patch => setSignupDraft(current => ({ ...current, ...patch }))}
-            onLogin={handleLogin}
-            onReactivate={handleReactivate}
-            onRequestPasswordReset={handleRequestPasswordReset}
-            onConfirmPasswordReset={handleConfirmPasswordReset}
-            onSignup={handleSignup}
-          />
-        ) : route.name === 'caterer-detail' && resolvedCaterer ? (
-          <Screen onRefresh={() => refreshAll(true)} refreshing={refreshing}>
-            {featuredPortfolioImage ? (
-              <Pressable onPress={() => setRoute({ name: 'gallery', catererId: resolvedCaterer.id })}>
-                <Image source={{ uri: featuredPortfolioImage.imageUrl }} style={styles.detailImage} />
-              </Pressable>
-            ) : null}
-            <HeroCard eyebrow="Caterer profile" title={resolvedCaterer.businessName} body={resolvedCaterer.heroTagline} />
-            <MotionCard>
-              <RatingRow rating={resolvedCaterer.rating} reviewCount={resolvedCaterer.reviewCount} priceFrom={resolvedCaterer.priceFrom} />
-              <Text style={[styles.bodyText, { color: theme.textMuted }]}>{resolvedCaterer.description}</Text>
-              <Text style={[styles.metaText, { color: theme.textMuted }]}>{resolvedCaterer.location || 'Location shared after profile completion'}</Text>
-            </MotionCard>
-            {resolvedCaterer.tiers.map(tier => (
-              <MotionCard key={tier.name}>
-                <Text style={[styles.cardTitle, { color: theme.text }]}>{tier.name}</Text>
-                <Text style={[styles.metaText, { color: theme.textMuted }]}>From {formatCurrency(tier.pricePerHead)} per guest</Text>
-                <Text style={[styles.bodyText, { color: theme.textMuted }]}>{tier.items.join(' . ')}</Text>
-                <PrimaryButton
-                  label="Book this tier"
-                  onPress={() =>
-                    requireCustomerSession(
-                      () => setRoute({ name: 'checkout', catererId: resolvedCaterer.id, tierName: tier.name }),
-                      'Sign in to create a booking and start the deposit flow for this caterer.',
-                    )
-                  }
-                />
-              </MotionCard>
-            ))}
-            <ButtonRow>
-              <SecondaryButton
-                label="Request quote"
-                onPress={() =>
-                  requireCustomerSession(
-                    () => setRoute({ name: 'quote-request', catererId: resolvedCaterer.id }),
-                    'Sign in to send a quote request and keep the inquiry tied to your account.',
-                  )
-                }
-              />
-              <GhostButton label="Gallery" onPress={() => setRoute({ name: 'gallery', catererId: resolvedCaterer.id })} />
-            </ButtonRow>
-          </Screen>
-        ) : route.name === 'gallery' && resolvedCaterer ? (
-          <Screen>
-            <PortfolioGallerySection
-              title={`${resolvedCaterer.businessName} gallery`}
-              subtitle="Recent portfolio work, optimized for a premium mobile browsing flow."
-              items={orderedPortfolio}
-            />
-          </Screen>
-        ) : route.name === 'quote-request' && resolvedCaterer ? (
-          <Screen>
-            <SectionHeader title="Request a tailored quote" subtitle="Send a structured brief directly into the authenticated inquiry workflow." />
-            <Field label="Event brief" value={quoteDraft.description} onChangeText={value => setQuoteDraft(current => ({ ...current, description: value }))} multiline />
-            <Field label="Guest count" value={quoteDraft.guestCount} onChangeText={value => setQuoteDraft(current => ({ ...current, guestCount: value }))} />
-            <Field label="Budget estimate" value={quoteDraft.budgetEstimate} onChangeText={value => setQuoteDraft(current => ({ ...current, budgetEstimate: value }))} />
-            <PrimaryButton label="Send quote request" onPress={submitQuote} />
-          </Screen>
-        ) : route.name === 'checkout' && resolvedCaterer ? (
-          <Screen>
-            <SectionHeader title="Secure your event date" subtitle="Create a booking that is bound to your authenticated account and trigger the deposit request securely." />
-            <MotionCard>
-              <Text style={[styles.cardTitle, { color: theme.text }]}>{resolvedCaterer.businessName}</Text>
-              <Text style={[styles.metaText, { color: theme.textMuted }]}>
-                {activeApprovedQuote?.approvedPackageLabel || route.tierName || resolvedCaterer.tiers[0]?.name || 'Selected tier'}
-              </Text>
-              {activeApprovedQuote ? (
-                <Text style={[styles.bodyText, { color: theme.textMuted }]}>
-                  Approved custom quote for {activeApprovedQuote.guestCount} guests . Total{' '}
-                  {formatCurrency(activeApprovedQuote.approvedTotal || activeApprovedQuote.budgetEstimate)}
-                </Text>
-              ) : null}
-            </MotionCard>
-            <Field label="Phone number" value={checkoutDraft.customerPhone} onChangeText={value => setCheckoutDraft(current => ({ ...current, customerPhone: value }))} hint="Used for the M-Pesa deposit prompt." />
-            {activeApprovedQuote ? (
-              <MotionCard>
-                <Text style={[styles.metaText, { color: theme.textMuted }]}>Approved scope</Text>
-                <Text style={[styles.bodyText, { color: theme.textMuted }]}>
-                  This booking will use the approved custom quote terms instead of falling back to a standard tier package.
-                </Text>
-              </MotionCard>
-            ) : (
-              <Field label="Guest count" value={checkoutDraft.guestCount} onChangeText={value => setCheckoutDraft(current => ({ ...current, guestCount: value }))} />
-            )}
-            <PrimaryButton label="Create booking and request deposit" onPress={createBooking} />
-          </Screen>
-        ) : route.name === 'booking-detail' && activeBooking ? (
-          <Screen>
-            <SectionHeader title={activeBooking.catererName} subtitle={`Event date ${formatShortDate(activeBooking.eventDate)}`} />
-            <MotionCard>
-              <Text style={[styles.metaText, { color: theme.textMuted }]}>Status</Text>
-              <Text style={[styles.cardTitle, { color: theme.text }]}>{toSentenceCase(activeBooking.status)}</Text>
-              <StatusPill label={toSentenceCase(activeBooking.paymentStatus)} muted={activeBooking.paymentStatus !== 'paid'} />
-              <BookingProgress booking={activeBooking} />
-            </MotionCard>
-            <MotionCard>
-              <Text style={[styles.metaText, { color: theme.textMuted }]}>Booking summary</Text>
-              <Text style={[styles.bodyText, { color: theme.textMuted }]}>
-                {activeBooking.guestCount} guests on {activeBooking.selectedTier}
-              </Text>
-              <Text style={[styles.bodyText, { color: theme.textMuted }]}>
-                Deposit {formatCurrency(activeBooking.deposit)} . Balance {formatCurrency(activeBooking.balance)}
-              </Text>
-              {activeBooking.lifecycleStage === 'awaiting_payment' ? (
-                <Text style={[styles.bodyText, { color: theme.textMuted }]}>
-                  {activeBooking.paymentStatus === 'pending'
-                    ? 'A deposit request is already in progress for this booking.'
-                    : 'This booking is approved and waiting for a successful deposit before it becomes confirmed.'}
-                </Text>
-              ) : null}
-              {session?.user.role === 'customer' && activeBooking.isPayable ? (
-                <PrimaryButton label="Request deposit prompt" onPress={() => void requestBookingPayment(activeBooking.id)} />
-              ) : null}
-              {session?.user.role === 'customer' &&
-              activeBooking.paymentProvider === 'test' &&
-              activeBooking.paymentStatus === 'pending' &&
-              activeBooking.activePaymentId ? (
-                <SecondaryButton label="Confirm test payment" onPress={() => void completeTestBookingPayment(activeBooking.activePaymentId!)} />
-              ) : null}
-            </MotionCard>
-          </Screen>
-        ) : route.name === 'chat' ? (
-          <View style={{ flex: 1 }}>
-            <Screen>
-              <SectionHeader title={route.contactName} subtitle="Private conversation" />
-              {messages.map(item => {
-                const mine = item.sender.toLowerCase() === session?.user.email.toLowerCase();
-                return (
-                  <View key={item.id} style={[styles.chatBubble, mine ? styles.chatBubbleMine : styles.chatBubbleTheirs]}>
-                    <Text style={[styles.chatText, mine ? styles.chatTextMine : undefined]}>{item.content}</Text>
-                  </View>
-                );
-              })}
-            </Screen>
-            <View style={[styles.composer, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-              <TextInput
-                value={messageDraft}
-                onChangeText={setMessageDraft}
-                placeholder="Send a polished reply"
-                placeholderTextColor={theme.textMuted}
-                style={[styles.composerInput, { backgroundColor: theme.field, color: theme.text }]}
-              />
-              <Pressable style={styles.sendButton} onPress={sendMessage}>
-                <Ionicons name="paper-plane" size={18} color={lightTheme.inverseText} />
-              </Pressable>
-            </View>
-          </View>
-        ) : route.name === 'settings' ? (
-          <Screen>
-            <SectionHeader
-              title={currentUser?.role === 'caterer' ? 'Studio settings' : 'Account settings'}
-              subtitle={
-                currentUser?.role === 'caterer'
-                  ? 'Brand, account, and workspace controls for your caterer studio.'
-                  : 'Personal account, workspace, and appearance controls grounded in supported features.'
-              }
-            />
-            <MotionCard style={styles.settingsHeroCard}>
-              <MunchBrandLockup compact />
-              <View style={styles.settingsHeroMeta}>
-                <View style={styles.profileHeader}>
-                  <Avatar label={currentUser?.fullName || 'User'} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.cardTitle, { color: theme.text }]}>{currentUser?.fullName || 'User'}</Text>
-                    <Text style={[styles.metaText, { color: theme.textMuted }]}>{currentUser?.email || ''}</Text>
-                  </View>
-                  <StatusPill label={currentUser?.role || 'customer'} />
-                </View>
-                <Text style={[styles.bodyText, { color: theme.textMuted }]}>
-                  Joined {formatShortDate(currentUser?.createdAt)}. This workspace syncs with your authenticated account, live bookings, real messages, and role-based profile data.
-                </Text>
-              </View>
-            </MotionCard>
-            <MotionCard>
-              <Text style={[styles.cardTitle, { color: theme.text }]}>Appearance</Text>
-              <Text style={[styles.bodyText, { color: theme.textMuted }]}>
-                {currentUser?.role === 'caterer'
-                  ? 'Choose how your caterer workspace should look while managing inquiries, bookings, and your studio profile.'
-                  : 'Choose how your customer workspace should look while browsing caterers, bookings, and messages.'}
-              </Text>
-              <ThemeToggleBar
-                value={themeMode}
-                onChange={mode => {
-                  setThemeMode(mode);
-                  void saveThemePreference(mode);
-                }}
-              />
-            </MotionCard>
-            <MotionCard>
-              <Text style={[styles.cardTitle, { color: theme.text }]}>Account details</Text>
-              <Text style={[styles.bodyText, { color: theme.textMuted }]}>Update the account details used across your workspace.</Text>
-              <Field label="Full name" value={profileDraft.fullName} onChangeText={value => setProfileDraft(current => ({ ...current, fullName: value }))} />
-              <Field label="Username" value={profileDraft.username} onChangeText={value => setProfileDraft(current => ({ ...current, username: value }))} />
-              <ButtonRow>
-                <PrimaryButton label="Save changes" onPress={() => void saveProfile()} />
-                <SecondaryButton label="Refresh data" onPress={() => void refreshAll(true)} />
-              </ButtonRow>
-            </MotionCard>
-            {currentUser?.role === 'caterer' ? (
-              <MotionCard>
-                <Text style={[styles.cardTitle, { color: theme.text }]}>Business studio</Text>
-                <Text style={[styles.bodyText, { color: theme.textMuted }]}>
-                  Manage your business profile, portfolio, and marketplace presence.
-                </Text>
-                <View style={styles.settingsList}>
-                  <SettingStat label="Business" value={myCatererProfile?.businessName || 'Complete your studio profile'} />
-                  <SettingStat label="Portfolio items" value={String(myCatererProfile?.portfolio.length || 0)} />
-                  <SettingStat label="Marketplace rating" value={`${(myCatererProfile?.rating || 0).toFixed(1)} . ${myCatererProfile?.reviewCount || 0} reviews`} />
-                </View>
-                <ButtonRow>
-                  <PrimaryButton
-                    label="Edit studio profile"
-                    onPress={() => {
-                      setVendorTab('profile');
-                      setRoute({ name: 'vendor' });
-                    }}
-                  />
-                  <SecondaryButton
-                    label="Manage portfolio"
-                    onPress={() => {
-                      setVendorTab('portfolio');
-                      setRoute({ name: 'vendor' });
-                    }}
-                  />
-                </ButtonRow>
-              </MotionCard>
-            ) : (
-              <MotionCard>
-                <Text style={[styles.cardTitle, { color: theme.text }]}>Quick access</Text>
-                <Text style={[styles.bodyText, { color: theme.textMuted }]}>Go directly to your bookings, messages, or caterer directory.</Text>
-                <ButtonRow>
-                  <PrimaryButton
-                    label="Bookings"
-                    onPress={() => {
-                      requireCustomerSession(() => {
-                        setCustomerTab('bookings');
-                        setRoute({ name: 'customer' });
-                      }, 'Sign in to view your bookings and approved quote requests.');
-                    }}
-                  />
-                  <SecondaryButton
-                    label="Messages"
-                    onPress={() => {
-                      requireCustomerSession(() => {
-                        setCustomerTab('messages');
-                        setRoute({ name: 'customer' });
-                      }, 'Sign in to view messages connected to your event inquiries.');
-                    }}
-                  />
-                </ButtonRow>
-                <GhostButton
-                  label="Browse caterers"
-                  onPress={() => {
-                    setCustomerTab('discover');
+            }
+            onAuthAction={
+              route.name === 'auth'
+                ? () => {
+                    setCustomerTab('home');
                     setRoute({ name: 'customer' });
-                  }}
-                />
-              </MotionCard>
-            )}
-            <MotionCard>
-              <Text style={[styles.cardTitle, { color: theme.text }]}>Account access</Text>
-              <Text style={[styles.bodyText, { color: theme.textMuted }]}>
-                For password or account assistance, contact the support channel linked to {currentUser?.email || 'your account'}.
-              </Text>
-              <View style={styles.settingsList}>
-                <SettingStat label="API" value={api.baseURL} subtle />
-                <SettingStat label="Session" value="Authenticated" subtle />
-              </View>
-              <GhostButton label="Sign out" onPress={() => void signOut()} />
-            </MotionCard>
-            <MotionCard>
-              <Text style={[styles.cardTitle, { color: theme.text }]}>Account closure</Text>
-              <Text style={[styles.bodyText, { color: theme.textMuted }]}>
-                Disable access temporarily, or permanently remove your account and related workspace data.
-              </Text>
-              <ButtonRow>
-                <SecondaryButton label="Disable account" onPress={disableAccount} />
-                <GhostButton label="Delete forever" onPress={deleteAccount} />
-              </ButtonRow>
-            </MotionCard>
-          </Screen>
-        ) : session?.user.role === 'caterer' ? (
-          <>
-            <Screen onRefresh={() => refreshAll(true)} refreshing={refreshing}>
-              {vendorTab === 'dashboard' ? (
-                <>
-                  <SectionHeader eyebrow="Vendor dashboard" title="A sharper operating view for your catering business." />
-                  <View style={styles.metricsGrid}>
-                    <MotionCard style={styles.metricCard}>
-                      <Text style={[styles.statValue, { color: theme.text }]}>{vendorStats.totalBookings}</Text>
-                      <Text style={[styles.metaText, { color: theme.textMuted }]}>Total bookings</Text>
-                    </MotionCard>
-                    <MotionCard style={styles.metricCard}>
-                      <Text style={[styles.statValue, { color: theme.text }]}>{formatCurrency(vendorStats.totalRevenue)}</Text>
-                      <Text style={[styles.metaText, { color: theme.textMuted }]}>Paid revenue</Text>
-                    </MotionCard>
-                    <MotionCard style={styles.metricCard}>
-                      <Text style={[styles.statValue, { color: theme.text }]}>{vendorStats.approvedQuotes}</Text>
-                      <Text style={[styles.metaText, { color: theme.textMuted }]}>Approved requests</Text>
-                    </MotionCard>
-                    <MotionCard style={styles.metricCard}>
-                      <Text style={[styles.statValue, { color: theme.text }]}>{vendorStats.pendingQuotes}</Text>
-                      <Text style={[styles.metaText, { color: theme.textMuted }]}>Open inquiries</Text>
-                    </MotionCard>
-                  </View>
-                  <MotionCard style={styles.statsCard}>
-                    <View>
-                      <Text style={[styles.statValue, { color: theme.text }]}>{vendorStats.confirmedBookings}</Text>
-                      <Text style={[styles.metaText, { color: theme.textMuted }]}>Confirmed bookings</Text>
-                    </View>
-                    <View>
-                      <Text style={[styles.statValue, { color: theme.text }]}>{vendorStats.paidBookings}</Text>
-                      <Text style={[styles.metaText, { color: theme.textMuted }]}>Paid bookings</Text>
-                    </View>
-                  </MotionCard>
-                  <MotionCard style={styles.statsCard}>
-                    <View>
-                      <Text style={[styles.statValue, { color: theme.text }]}>{formatCurrency(vendorStats.averageBookingValue)}</Text>
-                      <Text style={[styles.metaText, { color: theme.textMuted }]}>Average booking value</Text>
-                    </View>
-                    <View>
-                      <Text style={[styles.statValue, { color: theme.text }]}>{vendorStats.inquiryConversionRate}%</Text>
-                      <Text style={[styles.metaText, { color: theme.textMuted }]}>Inquiry conversion</Text>
-                    </View>
-                  </MotionCard>
-                  {bookings.slice(0, 3).map(item => (
-                    <BookingCard key={item.id} booking={item} onPress={() => void openBooking(item.id)} />
-                  ))}
-                </>
-              ) : null}
+                  }
+                : !session
+                  ? () => navigateAuth('login')
+                  : undefined
+            }
+            authActionLabel={
+              route.name === 'auth'
+                ? 'Explore'
+                : !session
+                  ? 'Sign in'
+                  : undefined
+            }
+          />
 
-              {vendorTab === 'inquiries' ? (
-                <>
-                  <SectionHeader title="Pending requests" subtitle="Only customer briefs still awaiting your decision stay in this queue." />
-                  {pendingQuotes.map(item => (
-                    <MotionCard key={item.id}>
-                      <Text style={[styles.cardTitle, { color: theme.text }]}>{item.catererName}</Text>
-                      <Text style={[styles.metaText, { color: theme.textMuted }]}>{item.guestCount} guests . Budget {formatCurrency(item.budgetEstimate)}</Text>
-                      <Text style={[styles.bodyText, { color: theme.textMuted }]}>{item.description}</Text>
-                      <ButtonRow>
-                        <SecondaryButton
-                          label="Message"
-                          onPress={() => {
-                            if (!item.customerEmail) {
-                              Alert.alert('Contact unavailable', 'This inquiry is missing customer contact information.');
-                              return;
-                            }
-                            void openConversation(item.customerEmail, item.customerEmail);
-                          }}
-                        />
-                        <GhostButton label="Reject" onPress={() => void rejectQuote(item.id)} />
-                        <PrimaryButton label="Approve" onPress={() => void approveQuote(item.id)} />
-                      </ButtonRow>
-                    </MotionCard>
-                  ))}
-                  {!pendingQuotes.length ? (
-                    <MotionCard>
-                      <Text style={[styles.cardTitle, { color: theme.text }]}>No pending requests</Text>
-                      <Text style={[styles.bodyText, { color: theme.textMuted }]}>
-                        New customer briefs will appear here until you approve or reject them.
-                      </Text>
-                    </MotionCard>
-                  ) : null}
-                </>
-              ) : null}
+          {error ? <InlineError message={error} onDismiss={() => setError(null)} /> : null}
+          {busy ? <BusyStripe /> : null}
 
-              {vendorTab === 'messages' ? (
-                <>
-                  <SectionHeader title="Client inbox" subtitle="See every active customer thread in one dedicated place, separate from request approvals." />
-                  {conversations.length ? (
-                    conversations.map(item => (
-                      <ConversationCard key={item.id} item={item} onPress={() => void openConversation(item.contactEmail, item.contactName)} />
-                    ))
-                  ) : (
-                    <MotionCard>
-                      <Text style={[styles.cardTitle, { color: theme.text }]}>No conversations yet</Text>
-                      <Text style={[styles.bodyText, { color: theme.textMuted }]}>
-                        When a customer messages you from an inquiry or booking, the thread will live here for easy follow-up.
-                      </Text>
-                    </MotionCard>
-                  )}
-                </>
-              ) : null}
-
-              {vendorTab === 'bookings' ? (
-                <>
-                  <SectionHeader title="Bookings pipeline" subtitle="Approved requests awaiting checkout are separated from bookings awaiting payment, confirmed events, and history." />
-                  {approvedQuotes.map(item => (
-                    <MotionCard key={item.id}>
-                      <Text style={[styles.cardTitle, { color: theme.text }]}>{item.catererName}</Text>
-                      <Text style={[styles.metaText, { color: theme.textMuted }]}>{item.guestCount} guests . Budget {formatCurrency(item.budgetEstimate)}</Text>
-                      <Text style={[styles.bodyText, { color: theme.textMuted }]}>{item.description}</Text>
-                      <StatusPill label="Awaiting customer checkout" />
-                    </MotionCard>
-                  ))}
-                  {actionableBookings.map(item => (
-                    <BookingCard key={item.id} booking={item} onPress={() => void openBooking(item.id)} />
-                  ))}
-                  {confirmedBookings.map(item => (
-                    <BookingCard key={item.id} booking={item} onPress={() => void openBooking(item.id)} />
-                  ))}
-                  {completedBookings.map(item => (
-                    <BookingCard key={item.id} booking={item} onPress={() => void openBooking(item.id)} />
-                  ))}
-                  {cancelledBookings.map(item => (
-                    <BookingCard key={item.id} booking={item} onPress={() => void openBooking(item.id)} />
-                  ))}
-                </>
-              ) : null}
-
-              {vendorTab === 'portfolio' ? (
-                <VendorPortfolioSection
-                  uploads={uploadDrafts}
-                  portfolio={orderedMyPortfolio}
-                  onPick={() => void pickPortfolioImage()}
-                  onUpload={() => void uploadPortfolioImages()}
-                  onSetDraftPrimary={setUploadDraftPrimary}
-                  onUpdateDraft={updateUploadDraft}
-                  onRemoveDraft={removeUploadDraft}
-                  onMakePrimary={imageId => void makePortfolioImagePrimary(imageId)}
-                  onDelete={deletePortfolioImage}
-                />
-              ) : null}
-
-              {vendorTab === 'profile' ? (
-                <>
-                  <SectionHeader title="Business profile" subtitle="Refine how your catering brand appears in the marketplace." />
-                  <Field label="Business name" value={catererDraft.businessName} onChangeText={value => setCatererDraft(current => ({ ...current, businessName: value }))} />
-                  <Field label="Hero tagline" value={catererDraft.heroTagline} onChangeText={value => setCatererDraft(current => ({ ...current, heroTagline: value }))} />
-                  <Field label="Location" value={catererDraft.location} onChangeText={value => setCatererDraft(current => ({ ...current, location: value }))} />
-                  <Field label="Phone number" value={catererDraft.phone} onChangeText={value => setCatererDraft(current => ({ ...current, phone: value }))} />
-                  <Field label="Cuisines" value={catererDraft.cuisines.join(', ')} onChangeText={value => setCatererDraft(current => ({ ...current, cuisines: value.split(',').map(item => item.trim()).filter(Boolean) }))} />
-                  <Field label="Brand description" value={catererDraft.description} onChangeText={value => setCatererDraft(current => ({ ...current, description: value }))} multiline />
-                  <TierEditorSection tiers={catererDraft.tiers} onAdd={addCatererTier} onUpdate={updateCatererTier} onRemove={removeCatererTier} />
-                  <PrimaryButton label="Save profile" onPress={() => void saveCatererProfile()} />
-                  <SecondaryButton label="Settings" onPress={() => setRoute({ name: 'settings' })} />
-                  <GhostButton label="Sign out" onPress={() => void signOut()} />
-                </>
-              ) : null}
-            </Screen>
-            <TabBar
-              items={[
-                { key: 'dashboard', label: 'Dashboard', icon: 'grid' },
-                { key: 'inquiries', label: 'Inquiries', icon: 'mail' },
-                { key: 'messages', label: 'Messages', icon: 'chatbubble' },
-                { key: 'bookings', label: 'Bookings', icon: 'calendar' },
-                { key: 'portfolio', label: 'Portfolio', icon: 'images' },
-                { key: 'profile', label: 'Profile', icon: 'person' },
-              ]}
-              active={vendorTab}
-              onChange={value => setVendorTab(value as VendorTab)}
+          {route.name === 'auth' ? (
+            <AuthFlow
+              screen={route.screen}
+              loginDraft={loginDraft}
+              passwordResetDraft={passwordResetDraft}
+              signupDraft={signupDraft}
+              busy={busy}
+              onNavigate={navigateAuth}
+              onChangeLogin={patch => setLoginDraft(current => ({ ...current, ...patch }))}
+              onChangePasswordReset={patch => setPasswordResetDraft(current => ({ ...current, ...patch }))}
+              onChangeSignup={patch => setSignupDraft(current => ({ ...current, ...patch }))}
+              onLogin={handleLogin}
+              onReactivate={handleReactivate}
+              onRequestPasswordReset={handleRequestPasswordReset}
+              onConfirmPasswordReset={handleConfirmPasswordReset}
+              onSignup={handleSignup}
             />
-          </>
-        ) : (
-          <>
+          ) : route.name === 'caterer-detail' && resolvedCaterer ? (
             <Screen onRefresh={() => refreshAll(true)} refreshing={refreshing}>
-              {customerTab === 'home' ? (
-                <>
-                  <CulinaryHero
-                    onExplore={() => setCustomerTab('discover')}
-                    onRequest={() =>
+              {featuredPortfolioImage ? (
+                <View style={styles.detailImageSection}>
+                  <Pressable onPress={() => setRoute({ name: 'gallery', catererId: resolvedCaterer.id })}>
+                    <Image source={{ uri: featuredPortfolioImage.imageUrl }} style={styles.detailImage} resizeMode="cover" />
+                  </Pressable>
+                  {orderedPortfolio.length > 1 ? (
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.thumbnailStrip}>
+                      {orderedPortfolio.map((item, index) => (
+                        <Pressable
+                          key={item.id}
+                          onPress={() => setActiveDetailImageIndex(index)}
+                          style={[
+                            styles.thumbnailWrap,
+                            index === activeDetailImageIndex ? styles.thumbnailWrapActive : undefined,
+                          ]}
+                        >
+                          <Image source={{ uri: item.imageUrl }} style={styles.thumbnailImage} resizeMode="cover" />
+                        </Pressable>
+                      ))}
+                    </ScrollView>
+                  ) : null}
+                </View>
+              ) : null}
+              <HeroCard eyebrow="Caterer profile" title={resolvedCaterer.businessName} body={resolvedCaterer.heroTagline} />
+              <MotionCard>
+                <RatingRow rating={resolvedCaterer.rating} reviewCount={resolvedCaterer.reviewCount} priceFrom={resolvedCaterer.priceFrom} />
+                <Text style={[styles.bodyText, { color: theme.textMuted }]}>{resolvedCaterer.description}</Text>
+                <Text style={[styles.metaText, { color: theme.textMuted }]}>{resolvedCaterer.location || 'Location shared after profile completion'}</Text>
+              </MotionCard>
+              {resolvedCaterer.tiers.map(tier => (
+                <MotionCard key={tier.name}>
+                  <Text style={[styles.cardTitle, { color: theme.text }]}>{tier.name}</Text>
+                  <Text style={[styles.metaText, { color: theme.textMuted }]}>From {formatCurrency(tier.pricePerHead)} / cover</Text>
+                  <Text style={[styles.bodyText, { color: theme.textMuted }]}>{tier.items.join(' . ')}</Text>
+                  <PrimaryButton
+                    label="Book this tier"
+                    onPress={() =>
                       requireCustomerSession(
-                        () => {
-                          setCustomerTab('discover');
-                        },
-                        'Sign in to request a tailored quote from a caterer you like.',
+                        () => setRoute({ name: 'checkout', catererId: resolvedCaterer.id, tierName: tier.name }),
+                        'Sign in to create a booking and start the deposit flow for this caterer.',
                       )
                     }
                   />
-                  <FeatureImageCard />
-                  <SectionHeader eyebrow="Featured" title="Curated caterers" subtitle="Premium vendors with strong presentation, reviews, and scalable event service." />
-                  {caterers.slice(0, 4).map(item => (
-                    <CatererCard key={item.id} caterer={item} onPress={() => void openCaterer(item.id)} />
-                  ))}
-                </>
-              ) : null}
+                </MotionCard>
+              ))}
+              <ButtonRow>
+                <SecondaryButton
+                  label="Request quote"
+                  onPress={() =>
+                    requireCustomerSession(
+                      () => setRoute({ name: 'quote-request', catererId: resolvedCaterer.id }),
+                      'Sign in to send a quote request and keep the inquiry tied to your account.',
+                    )
+                  }
+                />
+                <GhostButton label="Tasting gallery" onPress={() => setRoute({ name: 'gallery', catererId: resolvedCaterer.id })} />
+              </ButtonRow>
+            </Screen>
+          ) : route.name === 'gallery' && resolvedCaterer ? (
+            <Screen>
+              <PortfolioGallerySection
+                title={`${resolvedCaterer.businessName} tasting gallery`}
+                subtitle="Signature plate presentations, course flights, and banquet spreads."
+                items={orderedPortfolio}
+              />
+            </Screen>
+          ) : route.name === 'quote-request' && resolvedCaterer ? (
+            <Screen>
+              <SectionHeader title="Request a bespoke proposal" subtitle="Submit your event specs, guest headcount (covers), and culinary preferences directly to the kitchen." />
+              <Field label="Catering event brief & menu specs" value={quoteDraft.description} onChangeText={value => setQuoteDraft(current => ({ ...current, description: value }))} multiline />
+              <Field label="Guest covers (headcount)" value={quoteDraft.guestCount} onChangeText={value => setQuoteDraft(current => ({ ...current, guestCount: value }))} />
+              <Field label="Target catering allocation" value={quoteDraft.budgetEstimate} onChangeText={value => setQuoteDraft(current => ({ ...current, budgetEstimate: value }))} />
+              <PrimaryButton label="Send quote request" onPress={submitQuote} />
+            </Screen>
+          ) : route.name === 'checkout' && resolvedCaterer ? (
+            <Screen>
+              <SectionHeader title="Secure your event date" subtitle="Lock in your banquet reservation date and initiate the secure culinary deposit." />
+              <MotionCard>
+                <Text style={[styles.cardTitle, { color: theme.text }]}>{resolvedCaterer.businessName}</Text>
+                <Text style={[styles.metaText, { color: theme.textMuted }]}>
+                  {activeApprovedQuote?.approvedPackageLabel || route.tierName || resolvedCaterer.tiers[0]?.name || 'Selected tier'}
+                </Text>
+                {activeApprovedQuote ? (
+                  <Text style={[styles.bodyText, { color: theme.textMuted }]}>
+                    Approved bespoke proposal for {activeApprovedQuote.guestCount} covers . Total{' '}
+                    {formatCurrency(activeApprovedQuote.approvedTotal || activeApprovedQuote.budgetEstimate)}
+                  </Text>
+                ) : null}
+              </MotionCard>
+              <Field label="M-Pesa contact phone" value={checkoutDraft.customerPhone} onChangeText={value => setCheckoutDraft(current => ({ ...current, customerPhone: value }))} hint="Used for the M-Pesa deposit prompt." />
+              {activeApprovedQuote ? (
+                <MotionCard>
+                  <Text style={[styles.metaText, { color: theme.textMuted }]}>Approved culinary scope</Text>
+                  <Text style={[styles.bodyText, { color: theme.textMuted }]}>
+                    This booking will use the approved custom proposal terms instead of falling back to a standard tier package.
+                  </Text>
+                </MotionCard>
+              ) : (
+                <Field label="Guest covers (headcount)" value={checkoutDraft.guestCount} onChangeText={value => setCheckoutDraft(current => ({ ...current, guestCount: value }))} />
+              )}
+              <PrimaryButton label="Create booking and request deposit" onPress={createBooking} />
+            </Screen>
+          ) : route.name === 'booking-detail' && activeBooking ? (
+            <Screen>
+              <SectionHeader title={activeBooking.catererName} subtitle={`Event date ${formatShortDate(activeBooking.eventDate)}`} />
+              <MotionCard>
+                <Text style={[styles.metaText, { color: theme.textMuted }]}>Reservation status</Text>
+                <Text style={[styles.cardTitle, { color: theme.text }]}>{toSentenceCase(activeBooking.status)}</Text>
+                <StatusPill label={toSentenceCase(activeBooking.paymentStatus)} muted={activeBooking.paymentStatus !== 'paid'} />
+                <BookingProgress booking={activeBooking} />
+              </MotionCard>
+              <MotionCard>
+                <Text style={[styles.metaText, { color: theme.textMuted }]}>Banquet summary</Text>
+                <Text style={[styles.bodyText, { color: theme.textMuted }]}>
+                  {activeBooking.guestCount} covers on {activeBooking.selectedTier}
+                </Text>
+                <Text style={[styles.bodyText, { color: theme.textMuted }]}>
+                  Retainer {formatCurrency(activeBooking.deposit)} . Balance {formatCurrency(activeBooking.balance)}
+                </Text>
+                {activeBooking.lifecycleStage === 'awaiting_payment' ? (
+                  <Text style={[styles.bodyText, { color: theme.textMuted }]}>
+                    {activeBooking.paymentStatus === 'pending'
+                      ? 'A deposit request is already in progress for this booking.'
+                      : 'This booking is approved and waiting for a successful deposit before it becomes confirmed.'}
+                  </Text>
+                ) : null}
+                {session?.user.role === 'customer' && activeBooking.isPayable ? (
+                  <PrimaryButton label="Request deposit prompt" onPress={() => void requestBookingPayment(activeBooking.id)} />
+                ) : null}
+                {session?.user.role === 'customer' &&
+                  activeBooking.paymentProvider === 'test' &&
+                  activeBooking.paymentStatus === 'pending' &&
+                  activeBooking.activePaymentId ? (
+                  <SecondaryButton label="Confirm test payment" onPress={() => void completeTestBookingPayment(activeBooking.activePaymentId!)} />
+                ) : null}
+              </MotionCard>
+            </Screen>
+          ) : route.name === 'chat' ? (
+            <View style={{ flex: 1 }}>
+              <Screen>
+                <SectionHeader title={route.contactName} subtitle="Private conversation" />
+                {messages.map(item => {
+                  const mine = item.sender.toLowerCase() === session?.user.email.toLowerCase();
+                  return (
+                    <View key={item.id} style={[styles.chatBubble, mine ? styles.chatBubbleMine : styles.chatBubbleTheirs]}>
+                      <Text style={[styles.chatText, mine ? styles.chatTextMine : undefined]}>{item.content}</Text>
+                    </View>
+                  );
+                })}
+              </Screen>
+              <View style={[styles.composer, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                <TextInput
+                  value={messageDraft}
+                  onChangeText={setMessageDraft}
+                  placeholder="Send a polished reply"
+                  placeholderTextColor={theme.textMuted}
+                  style={[styles.composerInput, { backgroundColor: theme.field, color: theme.text }]}
+                />
+                <Pressable style={styles.sendButton} onPress={sendMessage}>
+                  <Ionicons name="paper-plane" size={18} color={lightTheme.inverseText} />
+                </Pressable>
+              </View>
+            </View>
+          ) : route.name === 'settings' ? (
+            <Screen>
+              <SectionHeader
+                title={currentUser?.role === 'caterer' ? 'Studio settings' : 'Account settings'}
+                subtitle={
+                  currentUser?.role === 'caterer'
+                    ? 'Brand, account, and workspace controls for your caterer studio.'
+                    : 'Personal account, workspace, and appearance controls grounded in supported features.'
+                }
+              />
+              <MotionCard style={styles.settingsHeroCard}>
+                <MunchBrandLockup compact />
+                <View style={styles.settingsHeroMeta}>
+                  <View style={styles.profileHeader}>
+                    <Avatar label={currentUser?.fullName || 'User'} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.cardTitle, { color: theme.text }]}>{currentUser?.fullName || 'User'}</Text>
+                      <Text style={[styles.metaText, { color: theme.textMuted }]}>{currentUser?.email || ''}</Text>
+                    </View>
+                    <StatusPill label={currentUser?.role || 'customer'} />
+                  </View>
+                  <Text style={[styles.bodyText, { color: theme.textMuted }]}>
+                    Joined {formatShortDate(currentUser?.createdAt)}. This workspace syncs with your authenticated account, live bookings, real messages, and role-based profile data.
+                  </Text>
+                </View>
+              </MotionCard>
+              <MotionCard>
+                <Text style={[styles.cardTitle, { color: theme.text }]}>Appearance</Text>
+                <Text style={[styles.bodyText, { color: theme.textMuted }]}>
+                  {currentUser?.role === 'caterer'
+                    ? 'Choose how your caterer workspace should look while managing inquiries, bookings, and your studio profile.'
+                    : 'Choose how your customer workspace should look while browsing caterers, bookings, and messages.'}
+                </Text>
+                <ThemeToggleBar
+                  value={themeMode}
+                  onChange={mode => {
+                    setThemeMode(mode);
+                    void saveThemePreference(mode, session?.user.id);
+                  }}
+                />
+              </MotionCard>
+              <MotionCard>
+                <Text style={[styles.cardTitle, { color: theme.text }]}>Account details</Text>
+                <Text style={[styles.bodyText, { color: theme.textMuted }]}>Update the account details used across your workspace.</Text>
+                <Field label="Full name" value={profileDraft.fullName} onChangeText={value => setProfileDraft(current => ({ ...current, fullName: value }))} />
+                <Field label="Username" value={profileDraft.username} onChangeText={value => setProfileDraft(current => ({ ...current, username: value }))} />
+                <ButtonRow>
+                  <PrimaryButton label="Save changes" onPress={() => void saveProfile()} />
+                  <SecondaryButton label="Refresh data" onPress={() => void refreshAll(true)} />
+                </ButtonRow>
+              </MotionCard>
+              {currentUser?.role === 'caterer' ? (
+                <MotionCard>
+                  <Text style={[styles.cardTitle, { color: theme.text }]}>Business studio</Text>
+                  <Text style={[styles.bodyText, { color: theme.textMuted }]}>
+                    Manage your business profile, portfolio, and marketplace presence.
+                  </Text>
+                  <View style={styles.settingsList}>
+                    <SettingStat label="Business" value={myCatererProfile?.businessName || 'Complete your studio profile'} />
+                    <SettingStat label="Portfolio items" value={String(myCatererProfile?.portfolio.length || 0)} />
+                    <SettingStat label="Marketplace rating" value={`${(myCatererProfile?.rating || 0).toFixed(1)} . ${myCatererProfile?.reviewCount || 0} reviews`} />
+                  </View>
+                  <ButtonRow>
+                    <PrimaryButton
+                      label="Edit studio profile"
+                      onPress={() => {
+                        setVendorTab('profile');
+                        setRoute({ name: 'vendor' });
+                      }}
+                    />
+                    <SecondaryButton
+                      label="Manage portfolio"
+                      onPress={() => {
+                        setVendorTab('portfolio');
+                        setRoute({ name: 'vendor' });
+                      }}
+                    />
+                  </ButtonRow>
+                </MotionCard>
+              ) : (
+                <MotionCard>
+                  <Text style={[styles.cardTitle, { color: theme.text }]}>Quick access</Text>
+                  <Text style={[styles.bodyText, { color: theme.textMuted }]}>Go directly to your bookings, messages, or caterer directory.</Text>
+                  <ButtonRow>
+                    <PrimaryButton
+                      label="Bookings"
+                      onPress={() => {
+                        requireCustomerSession(() => {
+                          setCustomerTab('bookings');
+                          setRoute({ name: 'customer' });
+                        }, 'Sign in to view your bookings and approved quote requests.');
+                      }}
+                    />
+                    <SecondaryButton
+                      label="Messages"
+                      onPress={() => {
+                        requireCustomerSession(() => {
+                          setCustomerTab('messages');
+                          setRoute({ name: 'customer' });
+                        }, 'Sign in to view messages connected to your event inquiries.');
+                      }}
+                    />
+                  </ButtonRow>
+                  <GhostButton
+                    label="Browse caterers"
+                    onPress={() => {
+                      setCustomerTab('discover');
+                      setRoute({ name: 'customer' });
+                    }}
+                  />
+                </MotionCard>
+              )}
+              <MotionCard>
+                <Text style={[styles.cardTitle, { color: theme.text }]}>Account access</Text>
+                <Text style={[styles.bodyText, { color: theme.textMuted }]}>
+                  For password or account assistance, contact the support channel linked to {currentUser?.email || 'your account'}.
+                </Text>
+                <View style={styles.settingsList}>
+                  <SettingStat label="API" value={api.baseURL} subtle />
+                  <SettingStat label="Session" value="Authenticated" subtle />
+                </View>
+                <GhostButton label="Sign out" onPress={() => void signOut()} />
+              </MotionCard>
+              <MotionCard>
+                <Text style={[styles.cardTitle, { color: theme.text }]}>Account closure</Text>
+                <Text style={[styles.bodyText, { color: theme.textMuted }]}>
+                  Disable access temporarily, or permanently remove your account and related workspace data.
+                </Text>
+                <ButtonRow>
+                  <SecondaryButton label="Disable account" onPress={disableAccount} />
+                  <GhostButton label="Delete forever" onPress={deleteAccount} />
+                </ButtonRow>
+              </MotionCard>
+            </Screen>
+          ) : session?.user.role === 'caterer' ? (
+            <>
+              <Screen onRefresh={() => refreshAll(true)} refreshing={refreshing}>
+                {vendorTab === 'dashboard' ? (
+                  <>
+                    <SectionHeader eyebrow="Executive dispatch" title="A commanding view of your catering operations & event pipeline." />
+                    <View style={styles.metricsGrid}>
+                      <MotionCard style={styles.metricCard}>
+                        <Text style={[styles.statValue, typeScale.heroTitle, { color: theme.text }]}>{vendorStats.totalBookings}</Text>
+                        <Text style={[styles.metaText, typeScale.meta, { color: theme.textMuted }]}>Total banquet contracts</Text>
+                      </MotionCard>
+                      <MotionCard style={styles.metricCard}>
+                        <Text style={[styles.statValue, typeScale.heroTitle, { color: theme.text }]}>{formatCurrency(vendorStats.totalRevenue)}</Text>
+                        <Text style={[styles.metaText, typeScale.meta, { color: theme.textMuted }]}>Gross secured revenue</Text>
+                      </MotionCard>
+                      <MotionCard style={styles.metricCard}>
+                        <Text style={[styles.statValue, typeScale.heroTitle, { color: theme.text }]}>{vendorStats.approvedQuotes}</Text>
+                        <Text style={[styles.metaText, typeScale.meta, { color: theme.textMuted }]}>Approved proposals</Text>
+                      </MotionCard>
+                      <MotionCard style={styles.metricCard}>
+                        <Text style={[styles.statValue, typeScale.heroTitle, { color: theme.text }]}>{vendorStats.pendingQuotes}</Text>
+                        <Text style={[styles.metaText, typeScale.meta, { color: theme.textMuted }]}>Active event briefs</Text>
+                      </MotionCard>
+                    </View>
+                    <MotionCard style={styles.statsCard}>
+                      <View>
+                        <Text style={[styles.statValue, typeScale.heroTitle, { color: theme.text }]}>{vendorStats.confirmedBookings}</Text>
+                        <Text style={[styles.metaText, typeScale.meta, { color: theme.textMuted }]}>Confirmed banquets</Text>
+                      </View>
+                      <View>
+                        <Text style={[styles.statValue, typeScale.heroTitle, { color: theme.text }]}>{vendorStats.paidBookings}</Text>
+                        <Text style={[styles.metaText, typeScale.meta, { color: theme.textMuted }]}>Settled contracts</Text>
+                      </View>
+                    </MotionCard>
+                    <MotionCard style={styles.statsCard}>
+                      <View>
+                        <Text style={[styles.statValue, typeScale.heroTitle, { color: theme.text }]}>{formatCurrency(vendorStats.averageBookingValue)}</Text>
+                        <Text style={[styles.metaText, typeScale.meta, { color: theme.textMuted }]}>Avg. event yield</Text>
+                      </View>
+                      <View>
+                        <Text style={[styles.statValue, typeScale.heroTitle, { color: theme.text }]}>{vendorStats.inquiryConversionRate}%</Text>
+                        <Text style={[styles.metaText, typeScale.meta, { color: theme.textMuted }]}>Proposal win rate</Text>
+                      </View>
+                    </MotionCard>
+                    {bookings.slice(0, 3).map(item => (
+                      <BookingCard key={item.id} booking={item} onPress={() => void openBooking(item.id)} />
+                    ))}
+                  </>
+                ) : null}
+                {vendorTab === 'inquiries' ? (
+                  <>
+                    <SectionHeader title="Active event briefs" subtitle="Client inquiries and event specifications awaiting chef decision." />
+                    {pendingQuotes.map(item => (
+                      <MotionCard key={item.id}>
+                        <Text style={[styles.cardTitle, typeScale.cardTitle, { color: theme.text }]}>{item.catererName}</Text>
+                        <Text style={[styles.metaText, typeScale.meta, { color: theme.textMuted }]}>{item.guestCount} covers . Budget {formatCurrency(item.budgetEstimate)}</Text>
+                        <Text style={[styles.bodyText, typeScale.body, { color: theme.textMuted }]}>{item.description}</Text>
+                        <ButtonRow>
+                          <SecondaryButton
+                            label="Message"
+                            onPress={() => {
+                              if (!item.customerEmail) {
+                                Alert.alert('Contact unavailable', 'This inquiry is missing customer contact information.');
+                                return;
+                              }
+                              void openConversation(item.customerEmail, item.customerEmail);
+                            }}
+                          />
+                          <GhostButton label="Decline" onPress={() => void rejectQuote(item.id)} />
+                          <PrimaryButton label="Approve proposal" onPress={() => void approveQuote(item.id)} />
+                        </ButtonRow>
+                      </MotionCard>
+                    ))}
+                    {!pendingQuotes.length ? (
+                      <MotionCard>
+                        <Text style={[styles.cardTitle, { color: theme.text }]}>No pending event briefs</Text>
+                        <Text style={[styles.bodyText, { color: theme.textMuted }]}>
+                          New customer event briefs will appear here until you approve or decline them.
+                        </Text>
+                      </MotionCard>
+                    ) : null}
+                  </>
+                ) : null}
 
-              {customerTab === 'discover' ? (
-                <>
-                  <SectionHeader title="Browse caterers" subtitle="Search by venue style, cuisine, or service quality." />
-                  <SearchField value={search} onChangeText={setSearch} placeholder="Search caterers, cuisine, location" />
-                  {searchResults.map(item => (
-                    <CatererCard key={item.id} caterer={item} onPress={() => void openCaterer(item.id)} />
-                  ))}
-                </>
-              ) : null}
+                {vendorTab === 'messages' ? (
+                  <>
+                    <SectionHeader title="Client inbox" subtitle="See every active customer thread in one dedicated place, separate from request approvals." />
+                    {conversations.length ? (
+                      conversations.map(item => (
+                        <ConversationCard key={item.id} item={item} onPress={() => void openConversation(item.contactEmail, item.contactName)} />
+                      ))
+                    ) : (
+                      <MotionCard>
+                        <Text style={[styles.cardTitle, { color: theme.text }]}>No conversations yet</Text>
+                        <Text style={[styles.bodyText, { color: theme.textMuted }]}>
+                          When a customer messages you from an inquiry or booking, the thread will live here for easy follow-up.
+                        </Text>
+                      </MotionCard>
+                    )}
+                  </>
+                ) : null}
 
-              {customerTab === 'messages' ? (
-                <>
-                  <SectionHeader title="Messages" subtitle="Every conversation is tied to your authenticated account, not a forged sender field." />
-                  {conversations.map(item => (
-                    <ConversationCard key={item.id} item={item} onPress={() => void openConversation(item.contactEmail, item.contactName)} />
-                  ))}
-                </>
-              ) : null}
+                {vendorTab === 'bookings' ? (
+                  <>
+                    <SectionHeader title="Banquets & service pipeline" subtitle="Approved proposals awaiting checkout are separated from bookings awaiting deposit, confirmed banquets, and history." />
+                    {approvedQuotes.map(item => (
+                      <MotionCard key={item.id}>
+                        <Text style={[styles.cardTitle, typeScale.cardTitle, { color: theme.text }]}>{item.catererName}</Text>
+                        <Text style={[styles.metaText, typeScale.meta, { color: theme.textMuted }]}>{item.guestCount} covers . Allocation {formatCurrency(item.budgetEstimate)}</Text>
+                        <Text style={[styles.bodyText, typeScale.body, { color: theme.textMuted }]}>{item.description}</Text>
+                        <StatusPill label="Awaiting customer checkout" />
+                      </MotionCard>
+                    ))}
+                    {actionableBookings.map(item => (
+                      <BookingCard key={item.id} booking={item} onPress={() => void openBooking(item.id)} />
+                    ))}
+                    {confirmedBookings.map(item => (
+                      <BookingCard key={item.id} booking={item} onPress={() => void openBooking(item.id)} />
+                    ))}
+                    {completedBookings.map(item => (
+                      <BookingCard key={item.id} booking={item} onPress={() => void openBooking(item.id)} />
+                    ))}
+                    {cancelledBookings.map(item => (
+                      <BookingCard key={item.id} booking={item} onPress={() => void openBooking(item.id)} />
+                    ))}
+                  </>
+                ) : null}
 
-              {customerTab === 'bookings' ? (
-                <>
-                  <SectionHeader title="Bookings" subtitle="Requests, checkout-ready quotes, active bookings, and history are separated by backend lifecycle state." />
-                  {actionableBookings.map(item => (
-                    <BookingCard key={item.id} booking={item} onPress={() => void openBooking(item.id)} />
-                  ))}
-                  {confirmedBookings.map(item => (
-                    <BookingCard key={item.id} booking={item} onPress={() => void openBooking(item.id)} />
-                  ))}
-                  <SectionHeader eyebrow="Ready to book" title="Approved requests" subtitle="When a caterer approves your brief, you can move straight into checkout from here." />
-                  {approvedQuotes.length ? (
-                    approvedQuotes.map(item => (
+                {vendorTab === 'portfolio' ? (
+                  <VendorPortfolioSection
+                    uploads={uploadDrafts}
+                    portfolio={orderedMyPortfolio}
+                    onPick={() => void pickPortfolioImage()}
+                    onUpload={() => void uploadPortfolioImages()}
+                    onSetDraftPrimary={setUploadDraftPrimary}
+                    onUpdateDraft={updateUploadDraft}
+                    onRemoveDraft={removeUploadDraft}
+                    onMakePrimary={imageId => void makePortfolioImagePrimary(imageId)}
+                    onDelete={deletePortfolioImage}
+                  />
+                ) : null}
+
+                {vendorTab === 'profile' ? (
+                  <>
+                    <SectionHeader title="Business profile" subtitle="Refine how your catering brand appears in the marketplace." />
+                    <Field label="Business name" value={catererDraft.businessName} onChangeText={value => setCatererDraft(current => ({ ...current, businessName: value }))} />
+                    <Field label="Hero tagline" value={catererDraft.heroTagline} onChangeText={value => setCatererDraft(current => ({ ...current, heroTagline: value }))} />
+                    <Field label="Location" value={catererDraft.location} onChangeText={value => setCatererDraft(current => ({ ...current, location: value }))} />
+                    <Field label="Phone number" value={catererDraft.phone} onChangeText={value => setCatererDraft(current => ({ ...current, phone: value }))} />
+                    <Field label="Cuisines" value={catererDraft.cuisines.join(', ')} onChangeText={value => setCatererDraft(current => ({ ...current, cuisines: value.split(',').map(item => item.trim()).filter(Boolean) }))} />
+                    <Field label="Brand description" value={catererDraft.description} onChangeText={value => setCatererDraft(current => ({ ...current, description: value }))} multiline />
+                    <TierEditorSection tiers={catererDraft.tiers} onAdd={addCatererTier} onUpdate={updateCatererTier} onRemove={removeCatererTier} />
+                    <PrimaryButton label="Save profile" onPress={() => void saveCatererProfile()} />
+                    <SecondaryButton label="Settings" onPress={() => setRoute({ name: 'settings' })} />
+                    <GhostButton label="Sign out" onPress={() => void signOut()} />
+                  </>
+                ) : null}
+              </Screen>
+              <TabBar
+                items={[
+                  { key: 'dashboard', label: 'Dashboard', icon: 'grid' },
+                  { key: 'inquiries', label: 'Inquiries', icon: 'mail' },
+                  { key: 'messages', label: 'Messages', icon: 'chatbubble' },
+                  { key: 'bookings', label: 'Bookings', icon: 'calendar' },
+                  { key: 'portfolio', label: 'Portfolio', icon: 'images' },
+                  { key: 'profile', label: 'Profile', icon: 'person' },
+                ]}
+                active={vendorTab}
+                onChange={value => setVendorTab(value as VendorTab)}
+              />
+            </>
+          ) : (
+            <>
+              <Screen onRefresh={() => refreshAll(true)} refreshing={refreshing}>
+                {customerTab === 'home' ? (
+                  <>
+                    <CulinaryHero
+                      onExplore={() => setCustomerTab('discover')}
+                      onRequest={() =>
+                        requireCustomerSession(
+                          () => {
+                            setCustomerTab('discover');
+                          },
+                          'Sign in to request a tailored quote from a caterer you like.',
+                        )
+                      }
+                    />
+                    <FeatureImageCard />
+                    <SectionHeader eyebrow="Signature houses" title="Curated caterers" subtitle="Premier culinary studios with verified guest reviews, exquisite plating, and scalable banquet service." />
+                    {caterers.slice(0, 4).map(item => (
+                      <CatererCard key={item.id} caterer={item} onPress={() => void openCaterer(item.id)} />
+                    ))}
+                  </>
+                ) : null}
+                {customerTab === 'discover' ? (
+                  <>
+                    <SectionHeader title="Explore culinary studios" subtitle="Filter by banquet style, signature cuisine, or event scale." />
+                    <SearchField value={search} onChangeText={setSearch} placeholder="Search culinary houses, cuisines, or venues" />
+                    {searchResults.map(item => (
+                      <CatererCard key={item.id} caterer={item} onPress={() => void openCaterer(item.id)} />
+                    ))}
+                  </>
+                ) : null}
+                {customerTab === 'messages' ? (
+                  <>
+                    <SectionHeader title="Messages" subtitle="Every conversation is tied to your authenticated account, not a forged sender field." />
+                    {conversations.map(item => (
+                      <ConversationCard key={item.id} item={item} onPress={() => void openConversation(item.contactEmail, item.contactName)} />
+                    ))}
+                  </>
+                ) : null}
+                {customerTab === 'bookings' ? (
+                  <>
+                    <SectionHeader title="Banquets & reservations" subtitle="Briefs, approved proposals, active date reservations, and completed banquets." />
+                    {actionableBookings.map(item => (
+                      <BookingCard key={item.id} booking={item} onPress={() => void openBooking(item.id)} />
+                    ))}
+                    {confirmedBookings.map(item => (
+                      <BookingCard key={item.id} booking={item} onPress={() => void openBooking(item.id)} />
+                    ))}
+                    <SectionHeader eyebrow="Ready to book" title="Approved proposals" subtitle="When a caterer approves your brief, you can move straight into checkout from here." />
+                    {approvedQuotes.length ? (
+                      approvedQuotes.map(item => (
                         <MotionCard key={item.id}>
-                          <Text style={[styles.cardTitle, { color: theme.text }]}>{item.catererName}</Text>
-                          <Text style={[styles.metaText, { color: theme.textMuted }]}>{item.guestCount} guests . {formatCurrency(item.budgetEstimate)}</Text>
-                          <Text style={[styles.metaText, { color: theme.textMuted }]}>
-                            {item.approvedPackageLabel || 'Custom quote'} . Total {formatCurrency(item.approvedTotal || item.budgetEstimate)}
+                          <Text style={[styles.cardTitle, typeScale.cardTitle, { color: theme.text }]}>{item.catererName}</Text>
+                          <Text style={[styles.metaText, typeScale.meta, { color: theme.textMuted }]}>{item.guestCount} covers . {formatCurrency(item.budgetEstimate)}</Text>
+                          <Text style={[styles.metaText, typeScale.meta, { color: theme.textMuted }]}>
+                            {item.approvedPackageLabel || 'Custom proposal'} . Total {formatCurrency(item.approvedTotal || item.budgetEstimate)}
                           </Text>
-                          <Text style={[styles.bodyText, { color: theme.textMuted }]}>{item.description}</Text>
+                          <Text style={[styles.bodyText, typeScale.body, { color: theme.textMuted }]}>{item.description}</Text>
                           <ButtonRow>
                             <StatusPill label="Awaiting payment" />
                             <PrimaryButton
@@ -1663,88 +1692,88 @@ export default function Index() {
                           </ButtonRow>
                         </MotionCard>
                       ))
-                  ) : (
-                    <MotionCard>
-                      <Text style={[styles.cardTitle, { color: theme.text }]}>No approved requests yet</Text>
-                      <Text style={[styles.bodyText, { color: theme.textMuted }]}>
-                        Once a caterer approves one of your event briefs, it will appear here with a checkout action.
-                      </Text>
-                    </MotionCard>
-                  )}
-                  <SectionHeader eyebrow="Requests" title="Pending review" />
-                  {pendingQuotes.map(item => (
-                    <MotionCard key={item.id}>
-                      <Text style={[styles.cardTitle, { color: theme.text }]}>{item.catererName}</Text>
-                      <Text style={[styles.metaText, { color: theme.textMuted }]}>{item.guestCount} guests . {formatCurrency(item.budgetEstimate)}</Text>
-                      <Text style={[styles.bodyText, { color: theme.textMuted }]}>{item.description}</Text>
-                      <StatusPill label={toSentenceCase(item.lifecycleStage)} muted />
-                    </MotionCard>
-                  ))}
-                  {rejectedQuotes.length ? (
-                    <>
-                      <SectionHeader eyebrow="Requests" title="Rejected" subtitle="Requests declined by a caterer stay here for reference instead of remaining in active lists." />
-                      {rejectedQuotes.map(item => (
-                        <MotionCard key={item.id}>
-                          <Text style={[styles.cardTitle, { color: theme.text }]}>{item.catererName}</Text>
-                          <Text style={[styles.metaText, { color: theme.textMuted }]}>{item.guestCount} guests . {formatCurrency(item.budgetEstimate)}</Text>
-                          <Text style={[styles.bodyText, { color: theme.textMuted }]}>{item.description}</Text>
-                          <StatusPill label="Rejected" muted />
-                        </MotionCard>
-                      ))}
-                    </>
-                  ) : null}
-                  {completedBookings.length ? (
-                    <>
-                      <SectionHeader eyebrow="History" title="Completed bookings" />
-                      {completedBookings.map(item => (
-                        <BookingCard key={item.id} booking={item} onPress={() => void openBooking(item.id)} />
-                      ))}
-                    </>
-                  ) : null}
-                  {cancelledBookings.length ? (
-                    <>
-                      <SectionHeader eyebrow="History" title="Cancelled bookings" />
-                      {cancelledBookings.map(item => (
-                        <BookingCard key={item.id} booking={item} onPress={() => void openBooking(item.id)} />
-                      ))}
-                    </>
-                  ) : null}
-                </>
-              ) : null}
+                    ) : (
+                      <MotionCard>
+                        <Text style={[styles.cardTitle, { color: theme.text }]}>No approved proposals yet</Text>
+                        <Text style={[styles.bodyText, { color: theme.textMuted }]}>
+                          Once a chef approves your event brief, your customized proposal will appear here ready for reservation.
+                        </Text>
+                      </MotionCard>
+                    )}
+                    <SectionHeader eyebrow="Inquiries" title="Pending review" subtitle="Event briefs currently undergoing chef review and menu costing." />
+                    {pendingQuotes.map(item => (
+                      <MotionCard key={item.id}>
+                        <Text style={[styles.cardTitle, typeScale.cardTitle, { color: theme.text }]}>{item.catererName}</Text>
+                        <Text style={[styles.metaText, typeScale.meta, { color: theme.textMuted }]}>{item.guestCount} covers . Allocation {formatCurrency(item.budgetEstimate)}</Text>
+                        <Text style={[styles.bodyText, typeScale.body, { color: theme.textMuted }]}>{item.description}</Text>
+                        <StatusPill label={toSentenceCase(item.lifecycleStage)} muted />
+                      </MotionCard>
+                    ))}
+                    {rejectedQuotes.length ? (
+                      <>
+                        <SectionHeader eyebrow="Inquiries" title="Declined" subtitle="Inquiries declined by a caterer stay here for reference instead of remaining in active lists." />
+                        {rejectedQuotes.map(item => (
+                          <MotionCard key={item.id}>
+                            <Text style={[styles.cardTitle, typeScale.cardTitle, { color: theme.text }]}>{item.catererName}</Text>
+                            <Text style={[styles.metaText, typeScale.meta, { color: theme.textMuted }]}>{item.guestCount} covers . Allocation {formatCurrency(item.budgetEstimate)}</Text>
+                            <Text style={[styles.bodyText, typeScale.body, { color: theme.textMuted }]}>{item.description}</Text>
+                            <StatusPill label="Declined" muted />
+                          </MotionCard>
+                        ))}
+                      </>
+                    ) : null}
+                    {completedBookings.length ? (
+                      <>
+                        <SectionHeader eyebrow="Archive" title="Completed banquets" />
+                        {completedBookings.map(item => (
+                          <BookingCard key={item.id} booking={item} onPress={() => void openBooking(item.id)} />
+                        ))}
+                      </>
+                    ) : null}
+                    {cancelledBookings.length ? (
+                      <>
+                        <SectionHeader eyebrow="Archive" title="Cancelled reservations" />
+                        {cancelledBookings.map(item => (
+                          <BookingCard key={item.id} booking={item} onPress={() => void openBooking(item.id)} />
+                        ))}
+                      </>
+                    ) : null}
+                  </>
+                ) : null}
 
-              {customerTab === 'profile' ? (
-                <>
-                  <MotionCard>
-                    <View style={styles.profileHeader}>
-                      <Avatar label={currentUser?.fullName || 'User'} />
-                      <View style={{ flex: 1 }}>
-                        <Text style={[styles.cardTitle, { color: theme.text }]}>{currentUser?.fullName || 'User'}</Text>
-                        <Text style={[styles.metaText, { color: theme.textMuted }]}>{currentUser?.email || ''}</Text>
+                {customerTab === 'profile' ? (
+                  <>
+                    <MotionCard>
+                      <View style={styles.profileHeader}>
+                        <Avatar label={currentUser?.fullName || 'User'} />
+                        <View style={{ flex: 1 }}>
+                          <Text style={[styles.cardTitle, typeScale.cardTitle, { color: theme.text }]}>{currentUser?.fullName || 'User'}</Text>
+                          <Text style={[styles.metaText, typeScale.meta, { color: theme.textMuted }]}>{currentUser?.email || ''}</Text>
+                        </View>
+                        <StatusPill label={currentUser?.role || 'customer'} />
                       </View>
-                      <StatusPill label={currentUser?.role || 'customer'} />
-                    </View>
-                  </MotionCard>
-                  <Field label="Full name" value={profileDraft.fullName} onChangeText={value => setProfileDraft(current => ({ ...current, fullName: value }))} />
-                  <Field label="Username" value={profileDraft.username} onChangeText={value => setProfileDraft(current => ({ ...current, username: value }))} />
-                  <PrimaryButton label="Save account details" onPress={() => void saveProfile()} />
-                  <SecondaryButton label="Settings" onPress={() => setRoute({ name: 'settings' })} />
-                  <GhostButton label="Sign out" onPress={() => void signOut()} />
-                </>
-              ) : null}
-            </Screen>
-            <TabBar
-              items={[
-                { key: 'home', label: 'Home', icon: 'home' },
-                { key: 'discover', label: 'Discover', icon: 'search' },
-                { key: 'messages', label: 'Messages', icon: 'chatbubble' },
-                { key: 'bookings', label: 'Bookings', icon: 'calendar' },
-                { key: 'profile', label: 'Profile', icon: 'person' },
-              ]}
-              active={customerTab}
-              onChange={handleCustomerTabChange}
-            />
-          </>
-        )}
+                    </MotionCard>
+                    <Field label="Full name" value={profileDraft.fullName} onChangeText={value => setProfileDraft(current => ({ ...current, fullName: value }))} />
+                    <Field label="Username" value={profileDraft.username} onChangeText={value => setProfileDraft(current => ({ ...current, username: value }))} />
+                    <PrimaryButton label="Save account details" onPress={() => void saveProfile()} />
+                    <SecondaryButton label="Settings" onPress={() => setRoute({ name: 'settings' })} />
+                    <GhostButton label="Sign out" onPress={() => void signOut()} />
+                  </>
+                ) : null}
+              </Screen>
+              <TabBar
+                items={[
+                  { key: 'home', label: 'Home', icon: 'home' },
+                  { key: 'discover', label: 'Discover', icon: 'search' },
+                  { key: 'messages', label: 'Messages', icon: 'chatbubble' },
+                  { key: 'bookings', label: 'Bookings', icon: 'calendar' },
+                  { key: 'profile', label: 'Profile', icon: 'person' },
+                ]}
+                active={customerTab}
+                onChange={handleCustomerTabChange}
+              />
+            </>
+          )}
         </View>
       </SafeAreaView>
     </ThemeContext.Provider>
@@ -1754,6 +1783,7 @@ export default function Index() {
 function CulinaryHero(props: { onExplore: () => void; onRequest: () => void }) {
   const theme = useThemeTokens();
   const float = React.useRef(new Animated.Value(0)).current;
+  const pulse = React.useRef(new Animated.Value(0)).current;
 
   React.useEffect(() => {
     Animated.loop(
@@ -1762,21 +1792,29 @@ function CulinaryHero(props: { onExplore: () => void; onRequest: () => void }) {
         Animated.timing(float, { toValue: 0, duration: 4200, easing: Easing.inOut(Easing.cubic), useNativeDriver: true }),
       ]),
     ).start();
-  }, [float]);
 
-  const cardLift = float.interpolate({ inputRange: [0, 1], outputRange: [0, -12] });
-  const orbScale = float.interpolate({ inputRange: [0, 1], outputRange: [1, 1.08] });
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 1, duration: 3400, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 0, duration: 3400, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+      ]),
+    ).start();
+  }, [float, pulse]);
+
+  const cardLift = float.interpolate({ inputRange: [0, 1], outputRange: [0, -10] });
+  const orbScale = pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.15] });
+  const orbOpacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.25, 0.45] });
 
   return (
     <MotionCard style={[styles.culinaryHero, { backgroundColor: theme.mode === 'dark' ? '#071112' : '#EAF2EF' }]}>
       <Image source={cateringHeroImage} style={styles.culinaryHeroImage} />
-      <LinearGradient colors={['rgba(7,17,18,0.2)', 'rgba(7,17,18,0.78)', 'rgba(7,17,18,0.92)']} style={styles.culinaryHeroOverlay} />
-      <Animated.View style={[styles.heroOrb, styles.heroOrbOne, { transform: [{ scale: orbScale }] }]} />
+      <LinearGradient colors={['rgba(7,17,18,0.25)', 'rgba(7,17,18,0.76)', 'rgba(7,17,18,0.94)']} style={styles.culinaryHeroOverlay} />
+      <Animated.View style={[styles.heroOrb, styles.heroOrbOne, { opacity: orbOpacity, transform: [{ scale: orbScale }] }]} />
       <Animated.View style={[styles.heroGlassPanel, { transform: [{ translateY: cardLift }] }]}>
-        <Text style={styles.heroPill}>Private dining . Events . Caterers</Text>
-        <Text style={styles.culinaryHeroTitle}>Catered moments, curated with calm precision.</Text>
-        <Text style={styles.culinaryHeroBody}>
-          Discover refined caterers, study their portfolios, compare service tiers, and move into quotes only when you are ready.
+        <Text style={[styles.heroPill, typeScale.label]}>Haute Cuisine . Bespoke Banquets . Private Dining</Text>
+        <Text style={[styles.culinaryHeroTitle, typeScale.heroTitle]}>Catered moments, curated with calm precision.</Text>
+        <Text style={[styles.culinaryHeroBody, typeScale.body]}>
+          Explore exceptional caterers, browse signature tasting menus, and craft an unforgettable culinary experience for your celebration.
         </Text>
         <ButtonRow>
           <PrimaryButton label="Explore caterers" onPress={props.onExplore} />
@@ -1794,8 +1832,8 @@ function FeatureImageCard() {
   React.useEffect(() => {
     Animated.loop(
       Animated.sequence([
-        Animated.timing(lift, { toValue: 1, duration: 3600, easing: Easing.inOut(Easing.cubic), useNativeDriver: true }),
-        Animated.timing(lift, { toValue: 0, duration: 3600, easing: Easing.inOut(Easing.cubic), useNativeDriver: true }),
+        Animated.timing(lift, { toValue: 1, duration: 3800, easing: Easing.inOut(Easing.cubic), useNativeDriver: true }),
+        Animated.timing(lift, { toValue: 0, duration: 3800, easing: Easing.inOut(Easing.cubic), useNativeDriver: true }),
       ]),
     ).start();
   }, [lift]);
@@ -1809,17 +1847,17 @@ function FeatureImageCard() {
           {
             transform: [
               {
-                scale: lift.interpolate({ inputRange: [0, 1], outputRange: [1, 1.035] }),
+                scale: lift.interpolate({ inputRange: [0, 1], outputRange: [1, 1.04] }),
               },
             ],
           },
         ]}
       />
-      <LinearGradient colors={['rgba(7,17,18,0)', 'rgba(7,17,18,0.68)']} style={styles.featureImageShade} />
+      <LinearGradient colors={['rgba(7,17,18,0.08)', 'rgba(7,17,18,0.72)']} style={styles.featureImageShade} />
       <View style={styles.featureImageContent}>
-        <Text style={styles.heroPill}>Tasting board</Text>
-        <Text style={[styles.cardTitle, { color: theme.inverseText }]}>See the quality before you commit.</Text>
-        <Text style={styles.featureImageText}>Portfolio-first browsing keeps the experience visual, calm, and service-led.</Text>
+        <Text style={[styles.heroPill, typeScale.label]}>{"Chef's Tasting Board & Mise en Place"}</Text>
+        <Text style={[styles.cardTitle, typeScale.cardTitle, { color: theme.inverseText }]}>See the artistry before you commit.</Text>
+        <Text style={[styles.featureImageText, typeScale.body]}>Portfolio-first browsing keeps planning your event visual, inspiring, and effortless.</Text>
       </View>
     </MotionCard>
   );
@@ -1827,22 +1865,38 @@ function FeatureImageCard() {
 
 function BootScreen() {
   const fade = React.useRef(new Animated.Value(0)).current;
+  const glow = React.useRef(new Animated.Value(0.5)).current;
 
   React.useEffect(() => {
-    Animated.timing(fade, {
-      toValue: 1,
-      duration: 700,
-      useNativeDriver: true,
-    }).start();
-  }, [fade]);
+    Animated.parallel([
+      Animated.timing(fade, {
+        toValue: 1,
+        duration: 800,
+        useNativeDriver: true,
+      }),
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(glow, { toValue: 1, duration: 1600, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+          Animated.timing(glow, { toValue: 0.5, duration: 1600, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+        ]),
+      ),
+    ]).start();
+  }, [fade, glow]);
 
   return (
     <ThemeContext.Provider value={darkTheme}>
       <SafeAreaView style={styles.bootContainer}>
-      <Animated.View style={{ opacity: fade, transform: [{ scale: fade.interpolate({ inputRange: [0, 1], outputRange: [0.94, 1] }) }] }}>
-        <View style={styles.bootGlow} />
-        <MunchBrandLockup theme="dark" />
-      </Animated.View>
+        <Animated.View
+          style={{
+            opacity: fade,
+            alignItems: 'center',
+            justifyContent: 'center',
+            transform: [{ scale: fade.interpolate({ inputRange: [0, 1], outputRange: [0.92, 1] }) }],
+          }}
+        >
+          <Animated.View style={[styles.bootGlow, { opacity: glow }]} />
+          <MunchBrandLockup theme="dark" />
+        </Animated.View>
       </SafeAreaView>
     </ThemeContext.Provider>
   );
@@ -1856,11 +1910,11 @@ function CatererCard(props: { caterer: CatererCardData; onPress: () => void }) {
         {props.caterer.portfolioPreview?.imageUrl ? (
           <Image source={{ uri: props.caterer.portfolioPreview.imageUrl }} style={styles.cardImage} />
         ) : null}
-        <Text style={[styles.cardTitle, { color: theme.text }]}>{props.caterer.businessName}</Text>
-        <Text style={styles.cardKicker}>{props.caterer.heroTagline}</Text>
+        <Text style={[styles.cardTitle, typeScale.cardTitle, { color: theme.text }]}>{props.caterer.businessName}</Text>
+        <Text style={[styles.cardKicker, typeScale.caption]}>{props.caterer.heroTagline}</Text>
         <RatingRow rating={props.caterer.rating} reviewCount={props.caterer.reviewCount} priceFrom={props.caterer.priceFrom} />
-        <Text style={[styles.metaText, { color: theme.textMuted }]}>{props.caterer.location || 'Location shared after profile completion'}</Text>
-        <Text style={[styles.bodyText, { color: theme.textMuted }]}>{props.caterer.description}</Text>
+        <Text style={[styles.metaText, typeScale.meta, { color: theme.textMuted }]}>{props.caterer.location || 'Location shared after profile completion'}</Text>
+        <Text style={[styles.bodyText, typeScale.body, { color: theme.textMuted }]}>{props.caterer.description}</Text>
         <View style={styles.tagRow}>
           {props.caterer.cuisines.map(item => (
             <StatusPill key={item} label={item} muted />
@@ -1877,11 +1931,11 @@ function BookingCard(props: { booking: Booking; onPress: () => void }) {
     <Pressable onPress={props.onPress}>
       <MotionCard>
         <View style={styles.portfolioMetaRow}>
-          <Text style={[styles.cardTitle, { color: theme.text }]}>{props.booking.catererName}</Text>
+          <Text style={[styles.cardTitle, typeScale.cardTitle, { color: theme.text }]}>{props.booking.catererName}</Text>
           <StatusPill label={toSentenceCase(props.booking.lifecycleStage)} muted={getBookingStatusTone(props.booking) === 'muted'} />
         </View>
-        <Text style={[styles.metaText, { color: theme.textMuted }]}>{formatShortDate(props.booking.eventDate)} . {props.booking.selectedTier}</Text>
-        <Text style={[styles.bodyText, { color: theme.textMuted }]}>
+        <Text style={[styles.metaText, typeScale.meta, { color: theme.textMuted }]}>{formatShortDate(props.booking.eventDate)} . {props.booking.selectedTier}</Text>
+        <Text style={[styles.bodyText, typeScale.body, { color: theme.textMuted }]}>
           {props.booking.guestCount} guests . Deposit {formatCurrency(props.booking.deposit)}
         </Text>
         <BookingProgress booking={props.booking} />
@@ -1898,8 +1952,8 @@ function ConversationCard(props: { item: Conversation; onPress: () => void }) {
         <View style={styles.profileHeader}>
           <Avatar label={props.item.contactName} />
           <View style={{ flex: 1 }}>
-            <Text style={[styles.cardTitle, { color: theme.text }]}>{props.item.contactName}</Text>
-            <Text style={[styles.bodyText, { color: theme.textMuted }]}>{props.item.preview}</Text>
+            <Text style={[styles.cardTitle, typeScale.cardTitle, { color: theme.text }]}>{props.item.contactName}</Text>
+            <Text style={[styles.bodyText, typeScale.body, { color: theme.textMuted }]}>{props.item.preview}</Text>
           </View>
           {props.item.unreadCount ? <StatusPill label={`${props.item.unreadCount}`} /> : null}
         </View>
@@ -1912,23 +1966,38 @@ function BookingProgress(props: { booking: Booking }) {
   const theme = useThemeTokens();
   const paid = props.booking.paymentStatus === 'paid' || props.booking.lifecycleStage === 'confirmed' || props.booking.lifecycleStage === 'completed';
   const pending = props.booking.paymentStatus === 'pending';
-  const width = paid ? '100%' : pending ? '72%' : '42%';
+  const targetPercent = paid ? 100 : pending ? 72 : 42;
+  const progressAnim = React.useRef(new Animated.Value(0)).current;
+
+  React.useEffect(() => {
+    Animated.spring(progressAnim, {
+      toValue: targetPercent,
+      tension: 40,
+      friction: 7,
+      useNativeDriver: false,
+    }).start();
+  }, [progressAnim, targetPercent]);
+
+  const widthInterpolated = progressAnim.interpolate({
+    inputRange: [0, 100],
+    outputRange: ['0%', '100%'],
+  });
+
   return (
     <View style={styles.progressWrap}>
       <View style={[styles.progressRail, { backgroundColor: theme.mode === 'dark' ? '#1C3133' : '#D8E1DE' }]}>
-        <View style={[styles.progressBar, { width }]} />
+        <Animated.View style={[styles.progressBar, { width: widthInterpolated }]} />
         <View style={[styles.progressDot, { borderColor: theme.surface }, paid ? styles.progressDotPaid : undefined]} />
       </View>
       <View style={styles.progressMetaRow}>
-        <Text style={[styles.progressText, { color: theme.textMuted }]}>
-          Payment {paid ? 'secured' : pending ? 'processing' : 'not started'}
+        <Text style={[styles.progressText, typeScale.caption, { color: theme.textMuted }]}>
+          Retainer {paid ? 'secured' : pending ? 'processing' : 'not started'}
         </Text>
-        <Text style={[styles.progressText, { color: theme.textMuted }]}>{toSentenceCase(props.booking.lifecycleStage)}</Text>
+        <Text style={[styles.progressText, typeScale.caption, { color: theme.textMuted }]}>{toSentenceCase(props.booking.lifecycleStage)}</Text>
       </View>
     </View>
   );
 }
-
 function RatingRow(props: { rating: number; reviewCount: number; priceFrom: number }) {
   const theme = useThemeTokens();
   const hasReviews = props.reviewCount > 0;
@@ -1937,10 +2006,10 @@ function RatingRow(props: { rating: number; reviewCount: number; priceFrom: numb
     <View style={styles.ratingRow}>
       <View style={[styles.ratingBadge, { backgroundColor: theme.mode === 'dark' ? '#183034' : '#E5F0EB' }]}>
         <Ionicons name="star" size={14} color={palette.gold500} />
-        <Text style={[styles.ratingValue, { color: theme.text }]}>{resolvedRating}</Text>
+        <Text style={[styles.ratingValue, typeScale.caption, { color: theme.text }]}>{resolvedRating}</Text>
       </View>
-      <Text style={[styles.ratingMeta, { color: theme.textMuted }]}>{hasReviews ? `${props.reviewCount} reviews` : 'Fresh studio profile'}</Text>
-      {props.priceFrom > 0 ? <Text style={[styles.ratingMeta, { color: theme.textMuted }]}>From {formatCurrency(props.priceFrom)}</Text> : null}
+      <Text style={[styles.ratingMeta, typeScale.meta, { color: theme.textMuted }]}>{hasReviews ? `${props.reviewCount} verified reviews` : 'New culinary house'}</Text>
+      {props.priceFrom > 0 ? <Text style={[styles.ratingMeta, typeScale.meta, { color: theme.textMuted }]}>From {formatCurrency(props.priceFrom)} / cover</Text> : null}
     </View>
   );
 }
@@ -1963,19 +2032,96 @@ function SearchField(props: { value: string; onChangeText: (value: string) => vo
 
 function PortfolioGallerySection(props: { title: string; subtitle: string; items: { id: string; imageUrl: string; caption: string; description: string; isPrimary: boolean }[] }) {
   const theme = useThemeTokens();
+  const [activeIndex, setActiveIndex] = React.useState(0);
+  const scrollX = React.useRef(new Animated.Value(0)).current;
+  const carouselRef = React.useRef<ScrollView>(null);
+  const { width: screenWidth } = useWindowDimensions();
+  const cardWidth = Math.min(screenWidth - 48, 720);
+
+  React.useEffect(() => {
+    if (activeIndex >= props.items.length) {
+      setActiveIndex(0);
+    }
+  }, [props.items.length, activeIndex]);
+
+  if (!props.items.length) {
+    return (
+      <>
+        <SectionHeader title={props.title} subtitle={props.subtitle} />
+        <MotionCard>
+          <Text style={[styles.cardTitle, { color: theme.text }]}>No portfolio images yet</Text>
+          <Text style={[styles.bodyText, { color: theme.textMuted }]}>
+            This caterer has not published portfolio work yet. Check back soon.
+          </Text>
+        </MotionCard>
+      </>
+    );
+  }
+
+  const activeItem = props.items[activeIndex];
+
   return (
     <>
       <SectionHeader title={props.title} subtitle={props.subtitle} />
-      {props.items.map(item => (
-        <MotionCard key={item.id}>
-          <Image source={{ uri: item.imageUrl }} style={styles.galleryImage} />
-          <View style={styles.portfolioMetaRow}>
-            {item.caption ? <Text style={[styles.cardTitle, { color: theme.text }]}>{item.caption}</Text> : null}
-            {item.isPrimary ? <StatusPill label="Main image" /> : null}
-          </View>
-          {item.description ? <Text style={[styles.bodyText, { color: theme.textMuted }]}>{item.description}</Text> : null}
-        </MotionCard>
-      ))}
+      <MotionCard style={styles.galleryCard}>
+        <Animated.ScrollView
+          ref={carouselRef}
+          horizontal
+          pagingEnabled
+          showsHorizontalScrollIndicator={false}
+          onScroll={Animated.event([{ nativeEvent: { contentOffset: { x: scrollX } } }], { useNativeDriver: false })}
+          onMomentumScrollEnd={event => {
+            const nextIndex = Math.round(event.nativeEvent.contentOffset.x / cardWidth);
+            setActiveIndex(Math.max(0, Math.min(nextIndex, props.items.length - 1)));
+          }}
+          scrollEventThrottle={16}
+        >
+          {props.items.map(item => (
+            <View key={item.id} style={{ width: cardWidth }}>
+              <Image source={{ uri: item.imageUrl }} style={[styles.galleryCarouselImage, { width: cardWidth }]} resizeMode="cover" />
+            </View>
+          ))}
+        </Animated.ScrollView>
+
+        <View style={styles.galleryDots}>
+          {props.items.map((item, index) => (
+            <Pressable
+              key={item.id}
+              onPress={() => {
+                setActiveIndex(index);
+                carouselRef.current?.scrollTo({ x: index * cardWidth, animated: true });
+              }}
+              style={[styles.galleryDot, index === activeIndex ? styles.galleryDotActive : undefined]}
+            />
+          ))}
+        </View>
+
+        <View style={styles.portfolioMetaRow}>
+          {activeItem.caption ? <Text style={[styles.cardTitle, typeScale.cardTitle, { color: theme.text }]}>{activeItem.caption}</Text> : null}
+          {activeItem.isPrimary ? <StatusPill label="Main image" /> : null}
+        </View>
+        {activeItem.description ? <Text style={[styles.bodyText, typeScale.body, { color: theme.textMuted }]}>{activeItem.description}</Text> : null}
+
+        {props.items.length > 1 ? (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.thumbnailStrip}>
+            {props.items.map((item, index) => (
+              <Pressable
+                key={item.id}
+                onPress={() => {
+                  setActiveIndex(index);
+                  carouselRef.current?.scrollTo({ x: index * cardWidth, animated: true });
+                }}
+                style={[
+                  styles.thumbnailWrap,
+                  index === activeIndex ? styles.thumbnailWrapActive : undefined,
+                ]}
+              >
+                <Image source={{ uri: item.imageUrl }} style={styles.thumbnailImage} resizeMode="cover" />
+              </Pressable>
+            ))}
+          </ScrollView>
+        ) : null}
+      </MotionCard>
     </>
   );
 }
@@ -1994,40 +2140,116 @@ function VendorPortfolioSection(props: {
   const theme = useThemeTokens();
   return (
     <>
-      <SectionHeader title="Portfolio" subtitle="Upload polished gallery images, set a primary cover, and add concise descriptions." />
+      <SectionHeader title="Curated Culinary Portfolio" subtitle="Curate your studio portfolio, highlight signature dishes, and showcase high-end plated courses." />
       <ButtonRow>
-        <SecondaryButton label="Choose image" onPress={props.onPick} />
-        {props.uploads.length ? <PrimaryButton label={`Upload ${props.uploads.length} image${props.uploads.length > 1 ? 's' : ''}`} onPress={props.onUpload} /> : null}
+        <SecondaryButton label="Select plate imagery" onPress={props.onPick} />
+        {props.uploads.length ? <PrimaryButton label={`Upload ${props.uploads.length} plate${props.uploads.length > 1 ? 's' : ''}`} onPress={props.onUpload} /> : null}
       </ButtonRow>
       {props.uploads.map(item => (
         <MotionCard key={item.id}>
-          <Image source={{ uri: item.uri }} style={styles.galleryImage} />
+          <Image source={{ uri: item.uri }} style={styles.galleryImage} resizeMode="cover" />
           <View style={styles.portfolioMetaRow}>
-            {item.isPrimary ? <StatusPill label="Main image" /> : <GhostButton label="Set as main" onPress={() => props.onSetDraftPrimary(item.id)} />}
+            {item.isPrimary ? <StatusPill label="Signature showcase" /> : <GhostButton label="Set signature" onPress={() => props.onSetDraftPrimary(item.id)} />}
             <GhostButton label="Remove" onPress={() => props.onRemoveDraft(item.id)} />
           </View>
-          <Field label="Title" value={item.caption} onChangeText={value => props.onUpdateDraft(item.id, { caption: value })} hint="Optional short label for the image." />
+          <Field label="Plate / course title" value={item.caption} onChangeText={value => props.onUpdateDraft(item.id, { caption: value })} hint="E.g. Seared King Salmon, Artisanal Canapé Station." />
           <Field
-            label="Description"
+            label="Culinary description"
             value={item.description}
             onChangeText={value => props.onUpdateDraft(item.id, { description: value })}
-            hint="Optional description shown in the public gallery."
+            hint="Describe the plating, flavor profile, or banquet service context."
             multiline
           />
         </MotionCard>
       ))}
       {props.portfolio.map(item => (
         <MotionCard key={item.id}>
-          <Image source={{ uri: item.imageUrl }} style={styles.galleryImage} />
+          <Image source={{ uri: item.imageUrl }} style={styles.galleryImage} resizeMode="cover" />
           <View style={styles.portfolioMetaRow}>
-            {item.caption ? <Text style={[styles.cardTitle, { color: theme.text }]}>{item.caption}</Text> : null}
-            {item.isPrimary ? <StatusPill label="Main image" /> : <GhostButton label="Set as main" onPress={() => props.onMakePrimary(item.id)} />}
+            {item.caption ? <Text style={[styles.cardTitle, typeScale.cardTitle, { color: theme.text }]}>{item.caption}</Text> : null}
+            {item.isPrimary ? <StatusPill label="Signature showcase" /> : <GhostButton label="Set signature" onPress={() => props.onMakePrimary(item.id)} />}
             <GhostButton label="Delete" onPress={() => props.onDelete(item.id)} />
           </View>
-          {item.description ? <Text style={[styles.bodyText, { color: theme.textMuted }]}>{item.description}</Text> : null}
+          {item.description ? <Text style={[styles.bodyText, typeScale.body, { color: theme.textMuted }]}>{item.description}</Text> : null}
         </MotionCard>
       ))}
     </>
+  );
+}
+function TierCardItem(props: {
+  tier: MenuTier;
+  index: number;
+  allTiers: MenuTier[];
+  onUpdate: (index: number, patch: Partial<MenuTier>) => void;
+  onRemove: (index: number) => void;
+}) {
+  const theme = useThemeTokens();
+  const [itemsText, setItemsText] = React.useState(() => (props.tier.items || []).join('\n'));
+
+  React.useEffect(() => {
+    const joined = (props.tier.items || []).join('\n');
+    const currentClean = itemsText
+      .split('\n')
+      .map(s => s.trim())
+      .filter(Boolean)
+      .join('\n');
+    if (joined !== currentClean && (props.tier.items || []).length > 0) {
+      setItemsText(joined);
+    }
+  }, [props.tier.items]);
+
+  const handleItemsChange = (text: string) => {
+    setItemsText(text);
+    const parsed = text
+      .split('\n')
+      .map(line => line.trim())
+      .filter(Boolean);
+    props.onUpdate(props.index, { items: parsed });
+  };
+
+  const tierItems = getTierPreviewItems(props.allTiers, props.index);
+
+  return (
+    <MotionCard key={`tier-${props.index}`}>
+      <View style={styles.portfolioMetaRow}>
+        <Text style={[styles.cardTitle, typeScale.cardTitle, { color: theme.text }]}>
+          {props.tier.name || `Service Tier #${props.index + 1}`}
+        </Text>
+        <GhostButton label="Remove" onPress={() => props.onRemove(props.index)} />
+      </View>
+      <Field
+        label="Tier name"
+        value={props.tier.name}
+        onChangeText={value => props.onUpdate(props.index, { name: value })}
+        hint="E.g. Plated 3-Course, Signature Buffet, Cocktail Canapés, Farm-to-Table, VIP Experience."
+      />
+      <Field
+        label="Price per cover (Pax)"
+        value={props.tier.pricePerHead ? String(props.tier.pricePerHead) : ''}
+        onChangeText={value =>
+          props.onUpdate(props.index, { pricePerHead: Number(value.replace(/[^0-9.]/g, '')) || 0 })
+        }
+        hint="Set the per-cover rate for this bespoke menu package."
+        keyboardType="numeric"
+      />
+      <Field
+        label="Menu courses & inclusions"
+        value={itemsText}
+        onChangeText={handleItemsChange}
+        hint="One course or service spec per line. Press Enter for each new course."
+        multiline
+      />
+      {tierItems.length ? (
+        <View style={styles.settingsList}>
+          <Text style={[styles.settingLabel, { color: theme.textMuted }]}>Client sees</Text>
+          <View style={styles.tagRow}>
+            {tierItems.map(item => (
+              <StatusPill key={`${props.tier.name || props.index}-${item}`} label={item} muted />
+            ))}
+          </View>
+        </View>
+      ) : null}
+    </MotionCard>
   );
 }
 
@@ -2040,50 +2262,31 @@ function TierEditorSection(props: {
   const theme = useThemeTokens();
   return (
     <>
-      <SectionHeader title="Package tiers" subtitle="Build a clear service ladder. Each higher tier inherits the services below it, then adds its own upgrades." />
+      <SectionHeader
+        title="Bespoke service tiers"
+        subtitle="Define your custom service packages, bespoke menus, and per-cover pricing with complete freedom."
+      />
       <ButtonRow>
-        <SecondaryButton label="Add tier" onPress={props.onAdd} />
+        <SecondaryButton label="Add service tier" onPress={props.onAdd} />
       </ButtonRow>
-      {props.tiers.map((tier, index) => {
-        const cumulativeItems = getTierPreviewItems(props.tiers, index);
-        const isBaseTier = index === 0;
-        return (
-          <MotionCard key={`${tier.name}-${index}`}>
-            <View style={styles.portfolioMetaRow}>
-              <Text style={[styles.cardTitle, { color: theme.text }]}>{tier.name}</Text>
-              <GhostButton label="Remove" onPress={() => props.onRemove(index)} />
-            </View>
-            <Field
-              label="Tier name"
-              value={tier.name}
-              onChangeText={value => props.onUpdate(index, { name: value })}
-              hint="Standard, Premium, and Deluxe are strong defaults, but you can rename them."
-            />
-            <Field
-              label="Price per head"
-              value={String(tier.pricePerHead)}
-              onChangeText={value => props.onUpdate(index, { pricePerHead: Number(value.replace(/[^0-9.]/g, '')) || 0 })}
-              hint="Set the charge per guest for this package."
-              keyboardType="numeric"
-            />
-            <Field
-              label={isBaseTier ? 'Core services' : 'Additional upgrades'}
-              value={tier.items.join('\n')}
-              onChangeText={value => props.onUpdate(index, { items: value.split('\n').map(item => item.trim()).filter(Boolean) })}
-              hint={isBaseTier ? 'One service per line. These form the foundation for every higher tier.' : 'One upgrade per line. These services are added on top of the tiers below.'}
-              multiline
-            />
-            <View style={styles.settingsList}>
-              <Text style={[styles.settingLabel, { color: theme.textMuted }]}>Customer sees</Text>
-              <View style={styles.tagRow}>
-                {cumulativeItems.map(item => (
-                  <StatusPill key={`${tier.name}-${item}`} label={item} muted />
-                ))}
-              </View>
-            </View>
-          </MotionCard>
-        );
-      })}
+      {!props.tiers.length ? (
+        <MotionCard>
+          <Text style={[styles.cardTitle, typeScale.cardTitle, { color: theme.text }]}>No service tiers added yet</Text>
+          <Text style={[styles.bodyText, typeScale.body, { color: theme.textMuted }]}>
+            Click &quot;Add service tier&quot; above to create your custom menu packages with your own names, pricing, and inclusions.
+          </Text>
+        </MotionCard>
+      ) : null}
+      {props.tiers.map((tier, index) => (
+        <TierCardItem
+          key={`tier-${index}`}
+          tier={tier}
+          index={index}
+          allTiers={props.tiers}
+          onUpdate={props.onUpdate}
+          onRemove={props.onRemove}
+        />
+      ))}
     </>
   );
 }
@@ -2115,12 +2318,14 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   bootLogo: {
+    fontFamily: fonts.display,
     color: palette.white,
     fontSize: 34,
     fontWeight: '900',
     letterSpacing: 6,
   },
   bootCaption: {
+    fontFamily: fonts.body,
     color: '#DCE2EF',
     fontSize: 15,
   },
@@ -2131,6 +2336,7 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   bodyText: {
+    fontFamily: fonts.body,
     color: palette.slate700,
     lineHeight: 22,
     fontSize: 15,
@@ -2175,6 +2381,7 @@ const styles = StyleSheet.create({
     boxShadow: '0px 24px 44px rgba(0, 0, 0, 0.22)',
   },
   heroPill: {
+    fontFamily: fonts.body,
     alignSelf: 'flex-start',
     color: '#D9E7DF',
     borderColor: 'rgba(217, 231, 223, 0.32)',
@@ -2188,6 +2395,7 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   culinaryHeroTitle: {
+    fontFamily: fonts.heading,
     color: '#FBFCFA',
     fontSize: 38,
     lineHeight: 43,
@@ -2195,6 +2403,7 @@ const styles = StyleSheet.create({
     letterSpacing: -0.7,
   },
   culinaryHeroBody: {
+    fontFamily: fonts.body,
     color: '#DCE8E4',
     fontSize: 15,
     lineHeight: 23,
@@ -2219,38 +2428,99 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   featureImageText: {
+    fontFamily: fonts.body,
     color: '#DCE8E4',
     lineHeight: 22,
     fontSize: 15,
   },
   cardImage: {
     width: '100%',
-    height: 200,
+    aspectRatio: 16 / 9,
+    minHeight: 180,
+    maxHeight: 280,
     borderRadius: radius.md,
+    resizeMode: 'cover',
   },
   galleryImage: {
     width: '100%',
-    height: 240,
+    aspectRatio: 16 / 9,
+    minHeight: 240,
+    maxHeight: 440,
     borderRadius: radius.md,
+    resizeMode: 'cover',
+  },
+  galleryCard: {
+    gap: spacing.md,
+  },
+  galleryCarouselImage: {
+    width: '100%',
+    aspectRatio: 16 / 10,
+    minHeight: 280,
+    maxHeight: 480,
+    borderRadius: radius.lg,
+    resizeMode: 'cover',
+  },
+  galleryDots: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: spacing.sm,
+  },
+  galleryDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: palette.slate500,
+  },
+  galleryDotActive: {
+    backgroundColor: palette.gold500,
+    width: 22,
+  },
+  thumbnailStrip: {
+    flexGrow: 0,
+  },
+  thumbnailWrap: {
+    marginRight: spacing.sm,
+    borderRadius: radius.md,
+    borderWidth: 2,
+    borderColor: 'transparent',
+    overflow: 'hidden',
+  },
+  thumbnailWrapActive: {
+    borderColor: palette.gold500,
+  },
+  thumbnailImage: {
+    width: 80,
+    height: 60,
+    borderRadius: radius.md,
+    resizeMode: 'cover',
+  },
+  detailImageSection: {
+    gap: spacing.sm,
   },
   detailImage: {
     width: '100%',
-    height: 280,
+    aspectRatio: 16 / 9,
+    minHeight: 280,
+    maxHeight: 480,
     borderRadius: radius.lg,
     marginTop: spacing.md,
+    resizeMode: 'cover',
   },
   cardTitle: {
+    fontFamily: fonts.heading,
     color: palette.ink950,
     fontSize: 20,
     fontWeight: '800',
   },
   cardKicker: {
+    fontFamily: fonts.body,
     color: palette.gold500,
     fontSize: 13,
     fontWeight: '800',
     letterSpacing: 0.4,
   },
   metaText: {
+    fontFamily: fonts.body,
     color: palette.slate700,
   },
   ratingRow: {
@@ -2269,10 +2539,12 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
   },
   ratingValue: {
+    fontFamily: fonts.body,
     color: palette.ink950,
     fontWeight: '800',
   },
   ratingMeta: {
+    fontFamily: fonts.body,
     color: palette.slate700,
     fontWeight: '600',
   },
@@ -2309,6 +2581,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   progressText: {
+    fontFamily: fonts.body,
     color: palette.slate700,
     fontSize: 12,
     fontWeight: '700',
@@ -2324,6 +2597,7 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   searchInput: {
+    fontFamily: fonts.body,
     flex: 1,
     paddingVertical: spacing.lg,
     color: palette.ink950,
@@ -2337,6 +2611,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   settingLabel: {
+    fontFamily: fonts.body,
     color: palette.slate500,
     fontSize: 12,
     fontWeight: '700',
@@ -2363,6 +2638,7 @@ const styles = StyleSheet.create({
     width: '47%',
   },
   statValue: {
+    fontFamily: fonts.heading,
     color: palette.ink950,
     fontSize: 22,
     fontWeight: '900',
@@ -2381,6 +2657,7 @@ const styles = StyleSheet.create({
     backgroundColor: palette.white,
   },
   chatText: {
+    fontFamily: fonts.body,
     color: palette.ink950,
     lineHeight: 20,
   },
@@ -2398,6 +2675,7 @@ const styles = StyleSheet.create({
     borderColor: palette.border,
   },
   composerInput: {
+    fontFamily: fonts.body,
     flex: 1,
     backgroundColor: '#E7F0EC',
     borderRadius: radius.pill,
