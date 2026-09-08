@@ -138,7 +138,9 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Validate Compose file
-        run: docker compose config
+        env:
+          IMAGE_TAG: ci
+        run: docker compose config >/dev/null
 
       - name: Build backend image
         uses: docker/build-push-action@v6
