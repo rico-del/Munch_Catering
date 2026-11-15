@@ -1,7 +1,5 @@
 import { Platform } from 'react-native';
 
-import Constants from 'expo-constants';
-
 import {
   Booking,
   CatererCardData,

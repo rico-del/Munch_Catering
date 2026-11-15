@@ -2,11 +2,17 @@ import logging
 import os
 from uuid import uuid4
 
+try:
+    import boto3
+except ImportError:
+    boto3 = None
+
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 
 from munch_catering_backend.database import get_db
 from munch_catering_backend.dependencies import get_current_principal, require_role
 from munch_catering_backend.models import Principal, PortfolioImageUpdate, Review, ReviewCreate, ReviewListResponse
+from munch_catering_backend.settings import settings
 from munch_catering_backend.time_utils import utc_now
 from munch_catering_backend.utils import clamp_pagination, parse_object_id, read_validated_upload, sanitize_filename
 
@@ -15,6 +21,48 @@ router = APIRouter(prefix="/portfolio", tags=["Portfolio & Reviews"])
 
 PORTFOLIO_DIR = "portfolio_images"
 os.makedirs(PORTFOLIO_DIR, exist_ok=True)
+
+_s3_client = None
+
+
+def get_s3_client():
+    global _s3_client
+    if _s3_client is None:
+        if boto3 is None:
+            raise RuntimeError("boto3 is required for S3 storage but is not installed.")
+        _s3_client = boto3.client("s3", region_name=settings.AWS_REGION)
+    return _s3_client
+
+
+def save_media_file(filename: str, content: bytes, content_type: str = "image/jpeg") -> str:
+    if settings.USE_S3_STORAGE and settings.S3_BUCKET_NAME:
+        s3 = get_s3_client()
+        key = f"portfolio_images/{filename}"
+        s3.put_object(
+            Bucket=settings.S3_BUCKET_NAME,
+            Key=key,
+            Body=content,
+            ContentType=content_type,
+        )
+        return f"/portfolio/images/{filename}"
+    else:
+        filepath = os.path.join(PORTFOLIO_DIR, filename)
+        with open(filepath, "wb") as handle:
+            handle.write(content)
+        return f"/portfolio/images/{filename}"
+
+
+def delete_media_file(filename: str) -> None:
+    if settings.USE_S3_STORAGE and settings.S3_BUCKET_NAME:
+        try:
+            s3 = get_s3_client()
+            s3.delete_object(Bucket=settings.S3_BUCKET_NAME, Key=f"portfolio_images/{filename}")
+        except Exception as exc:
+            logger.warning("Failed to delete S3 object %s: %s", filename, exc)
+    else:
+        filepath = os.path.join(PORTFOLIO_DIR, filename)
+        if os.path.exists(filepath):
+            os.remove(filepath)
 
 
 def normalize_portfolio_items(items: list[dict]) -> list[dict]:
@@ -71,10 +119,7 @@ async def upload_portfolio_image(
     content = await read_validated_upload(file)
     filename = sanitize_filename(file.filename)
     image_id = uuid4().hex
-    filepath = os.path.join(PORTFOLIO_DIR, filename)
-
-    with open(filepath, "wb") as handle:
-        handle.write(content)
+    url = save_media_file(filename, content, file.content_type or "image/jpeg")
 
     portfolio = normalize_portfolio_items(caterer.get("portfolio", []))
 
@@ -122,9 +167,7 @@ async def delete_portfolio_image(
     remaining = [item for item in caterer.get("portfolio", []) if item.get("id") != image_id]
     await save_portfolio(db, principal.user_id, remaining)
 
-    filepath = os.path.join(PORTFOLIO_DIR, image["filename"])
-    if os.path.exists(filepath):
-        os.remove(filepath)
+    delete_media_file(image["filename"])
 
     return {"message": "Image deleted successfully", "deleted_image_id": image_id}
 

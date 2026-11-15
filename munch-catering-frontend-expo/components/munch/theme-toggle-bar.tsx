@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { ThemeMode, palette, radius, spacing } from '@/lib/munch-data';
 import { lightTheme, useThemeTokens } from '@/lib/theme-context';
+import { fonts } from '@/lib/typography';
 
 export function ThemeToggleBar(props: { value: ThemeMode; onChange: (value: ThemeMode) => void }) {
   const theme = useThemeTokens();
@@ -44,6 +45,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
   },
   themeToggleText: {
+    fontFamily: fonts.body,
     fontWeight: '800',
     fontSize: 14,
   },

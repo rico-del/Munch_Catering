@@ -41,7 +41,31 @@ def create_app() -> FastAPI:
     app.include_router(portfolio)
 
     settings.PORTFOLIO_DIR.mkdir(parents=True, exist_ok=True)
-    app.mount("/portfolio/images", StaticFiles(directory=str(settings.PORTFOLIO_DIR)), name="portfolio_images")
+
+    @app.get("/portfolio/images/{filename}")
+    async def get_portfolio_image(filename: str):
+        if settings.USE_S3_STORAGE and settings.S3_BUCKET_NAME:
+            try:
+                import boto3
+                from fastapi.responses import RedirectResponse
+
+                s3 = boto3.client("s3", region_name=settings.AWS_REGION)
+                presigned_url = s3.generate_presigned_url(
+                    "get_object",
+                    Params={"Bucket": settings.S3_BUCKET_NAME, "Key": f"portfolio_images/{filename}"},
+                    ExpiresIn=3600,
+                )
+                return RedirectResponse(url=presigned_url, status_code=307)
+            except Exception as exc:
+                logger.warning("Failed generating presigned URL for %s: %s", filename, exc)
+        local_path = settings.PORTFOLIO_DIR / filename
+        if local_path.exists():
+            from fastapi.responses import FileResponse
+
+            return FileResponse(str(local_path))
+        return JSONResponse(status_code=404, content={"detail": "Image not found"})
+
+    app.mount("/portfolio/static_images", StaticFiles(directory=str(settings.PORTFOLIO_DIR)), name="portfolio_static_images")
 
 
     @app.exception_handler(Exception)
@@ -53,6 +77,11 @@ def create_app() -> FastAPI:
     @app.get("/")
     async def root():
         return {"status": "Munch Catering API Online"}
+
+
+    @app.get("/health")
+    async def health():
+        return {"status": "healthy", "service": "munch-catering-backend"}
 
     return app
 

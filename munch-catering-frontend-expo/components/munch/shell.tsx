@@ -16,13 +16,28 @@ import { LinearGradient } from 'expo-linear-gradient';
 
 import { palette, radius, spacing } from '@/lib/munch-data';
 import { useThemeTokens } from '@/lib/theme-context';
+import { fonts } from '@/lib/typography';
 
-export function Header(props: { title: string; onBack?: () => void }) {
+export function Header(props: {
+  title: string;
+  onBack?: () => void;
+  onAuthAction?: () => void;
+  authActionLabel?: string;
+}) {
   const theme = useThemeTokens();
   return (
     <View style={[styles.header, { backgroundColor: theme.page }]}>
       {props.onBack ? (
-        <Pressable style={[styles.backButton, { backgroundColor: theme.surface }]} onPress={props.onBack}>
+        <Pressable
+          style={({ pressed }) => [
+            styles.backButton,
+            {
+              backgroundColor: theme.surface,
+              transform: [{ scale: pressed ? 0.94 : 1 }],
+            },
+          ]}
+          onPress={props.onBack}
+        >
           <Ionicons name="arrow-back" size={18} color={theme.text} />
         </Pressable>
       ) : (
@@ -32,9 +47,25 @@ export function Header(props: { title: string; onBack?: () => void }) {
         <Text style={[styles.headerKicker, { color: theme.textMuted }]}>Munch</Text>
         <Text style={[styles.headerTitle, { color: theme.text }]}>{props.title}</Text>
       </View>
-      <View style={[styles.headerBadge, { backgroundColor: theme.headerBadge }]}>
-        <Ionicons name="sparkles" size={14} color={palette.gold500} />
-      </View>
+      {props.onAuthAction && props.authActionLabel ? (
+        <Pressable
+          style={({ pressed }) => [
+            styles.headerAuthButton,
+            {
+              backgroundColor: theme.mode === 'dark' ? '#183034' : '#E5F0EB',
+              borderColor: theme.border,
+              transform: [{ scale: pressed ? 0.94 : 1 }],
+            },
+          ]}
+          onPress={props.onAuthAction}
+        >
+          <Text style={[styles.headerAuthText, { color: theme.text }]}>{props.authActionLabel}</Text>
+        </Pressable>
+      ) : (
+        <View style={[styles.headerBadge, { backgroundColor: theme.headerBadge }]}>
+          <Ionicons name="sparkles" size={14} color={palette.gold500} />
+        </View>
+      )}
     </View>
   );
 }
@@ -166,6 +197,7 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   headerKicker: {
+    fontFamily: fonts.body,
     color: palette.slate500,
     fontSize: 11,
     fontWeight: '800',
@@ -173,6 +205,7 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   headerTitle: {
+    fontFamily: fonts.heading,
     color: palette.ink950,
     fontSize: 22,
     fontWeight: '800',
@@ -196,6 +229,20 @@ const styles = StyleSheet.create({
     backgroundColor: '#E3EEE9',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  headerAuthButton: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerAuthText: {
+    fontFamily: fonts.body,
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.4,
   },
   scrollContent: {
     paddingHorizontal: spacing.lg,
@@ -285,6 +332,7 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   brandWordmark: {
+    fontFamily: fonts.display,
     color: palette.ink950,
     fontSize: 22,
     fontWeight: '900',
@@ -298,6 +346,7 @@ const styles = StyleSheet.create({
     color: palette.white,
   },
   brandSubmark: {
+    fontFamily: fonts.body,
     color: palette.slate700,
     fontSize: 12,
     fontWeight: '700',
@@ -321,6 +370,7 @@ const styles = StyleSheet.create({
     backgroundColor: palette.ink950,
   },
   eyebrow: {
+    fontFamily: fonts.body,
     color: palette.gold500,
     fontWeight: '800',
     textTransform: 'uppercase',
@@ -331,6 +381,7 @@ const styles = StyleSheet.create({
     color: palette.gold300,
   },
   heroTitle: {
+    fontFamily: fonts.heading,
     color: palette.ink950,
     fontSize: 31,
     fontWeight: '900',
@@ -341,6 +392,7 @@ const styles = StyleSheet.create({
     color: palette.white,
   },
   bodyText: {
+    fontFamily: fonts.body,
     color: palette.slate700,
     lineHeight: 22,
     fontSize: 15,
@@ -353,6 +405,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
   },
   sectionTitle: {
+    fontFamily: fonts.heading,
     color: palette.ink950,
     fontSize: 27,
     fontWeight: '900',
@@ -360,6 +413,7 @@ const styles = StyleSheet.create({
     letterSpacing: -0.35,
   },
   sectionBody: {
+    fontFamily: fonts.body,
     color: palette.slate700,
     lineHeight: 22,
   },
@@ -374,6 +428,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#F4F8F6',
   },
   settingLabel: {
+    fontFamily: fonts.body,
     color: palette.slate500,
     fontSize: 12,
     fontWeight: '700',
@@ -381,6 +436,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.6,
   },
   settingValue: {
+    fontFamily: fonts.body,
     color: palette.ink950,
     fontSize: 15,
     fontWeight: '700',

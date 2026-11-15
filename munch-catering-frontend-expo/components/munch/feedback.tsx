@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { palette, radius, spacing } from '@/lib/munch-data';
 import { useThemeTokens } from '@/lib/theme-context';
+import { fonts } from '@/lib/typography';
 
 export function StatusPill(props: { label: string; muted?: boolean }) {
   const theme = useThemeTokens();
@@ -58,6 +59,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#F4F8F6',
   },
   badgeText: {
+    fontFamily: fonts.body,
     color: palette.ink950,
     fontWeight: '700',
     fontSize: 12,
@@ -79,6 +81,7 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   inlineErrorText: {
+    fontFamily: fonts.body,
     color: '#235057',
     flex: 1,
     fontWeight: '600',
@@ -95,6 +98,7 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   busyText: {
+    fontFamily: fonts.body,
     color: palette.ink950,
     fontWeight: '700',
   },
@@ -107,6 +111,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   avatarText: {
+    fontFamily: fonts.body,
     color: '#D9E7DF',
     fontWeight: '900',
   },

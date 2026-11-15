@@ -5,6 +5,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { StatusPill } from '@/components/munch/feedback';
 import { palette, radius, spacing } from '@/lib/munch-data';
 import { useThemeTokens } from '@/lib/theme-context';
+import { fonts } from '@/lib/typography';
 
 export function RoleSelector(props: { value: 'customer' | 'caterer'; onChange: (value: 'customer' | 'caterer') => void }) {
   const theme = useThemeTokens();
@@ -61,10 +62,12 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   fieldLabel: {
+    fontFamily: fonts.body,
     color: palette.ink950,
     fontWeight: '700',
   },
   fieldHint: {
+    fontFamily: fonts.body,
     color: palette.slate500,
     fontSize: 12,
   },
@@ -99,12 +102,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   roleEditorialTitle: {
+    fontFamily: fonts.heading,
     color: palette.ink950,
     fontWeight: '800',
     fontSize: 18,
     lineHeight: 24,
   },
   roleEditorialBody: {
+    fontFamily: fonts.body,
     color: palette.slate700,
     lineHeight: 22,
     fontSize: 14,
@@ -116,6 +121,7 @@ const styles = StyleSheet.create({
     paddingTop: spacing.sm,
   },
   roleFootLabel: {
+    fontFamily: fonts.body,
     color: palette.slate500,
     fontSize: 12,
     fontWeight: '700',

@@ -1,0 +1,34 @@
+services:
+  frontend:
+    image: munch-catering-frontend:local
+
+  backend:
+    image: munch-catering-backend:local
+    environment:
+      APP_ENV: dev
+      MONGO_URI: mongodb://mongo:27017
+      DB_NAME: munch_catering
+      SECRET_KEY: dev-insecure-secret-key
+      USE_S3_STORAGE: "false"
+    depends_on:
+      - mongo
+    networks:
+      - app
+      - data
+
+  mongo:
+    image: mongo:latest
+    command: ["mongod", "--quiet"]
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - data
+    restart: unless-stopped
+
+volumes:
+  mongo_data:
+
+networks:
+  data:
